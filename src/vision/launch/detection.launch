@@ -1,0 +1,4 @@
+<launch>
+    <include file="$(find vision)/launch/camera.launch"/>
+    <node pkg="vision" type="detection_node.py" name="detection_node" output="screen" />
+</launch>
