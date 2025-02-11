@@ -1,0 +1,3 @@
+[submodule "src/vision/src/YOLOP"]
+	path = src/vision/src/YOLOP
+	url = https://github.com/hustvl/YOLOP.git
