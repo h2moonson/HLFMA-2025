@@ -1,0 +1,12 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/hmson/ieve_2025/src/gps/devel/lib/python3/dist-packages",
+        "/home/hmson/ros_review/iscc_2024/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/hmson/ieve_2025/src/gps/devel/lib/python3/dist-packages",
+        "/home/hmson/ros_review/iscc_2024/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ]
+}
