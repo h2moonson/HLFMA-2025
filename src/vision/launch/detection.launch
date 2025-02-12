@@ -1,4 +1,14 @@
 <launch>
     <include file="$(find vision)/launch/camera.launch"/>
-    <node pkg="vision" type="detection_node.py" name="detection_node" output="screen" />
+    <node pkg="vision" type="detection_node.py" name="detection_node" output="screen">
+        <param name="weights" value="weights/End-to-end.pth" />
+        <param name="source" value="inference/videos" />
+        <param name="img_size" value="640" />
+        <param name="conf_thres" value="0.25" />
+        <param name="iou_thres" value="0.45" />
+        <param name="device" value="cuda:0" />
+        <param name="save_dir" value="inference/output" />
+        <param name="augment" value="true" />
+        <param name="update" value="false" />
+    </node>
 </launch>
