@@ -1,8 +1,0 @@
-prefix=/home/hmson/ieve_2025/src/gps/devel
-
-Name: ntrip_ros
-Description: Description of ntrip_ros
-Version: 0.0.1
-Cflags: 
-Libs: -L${prefix}/lib 
-Requires: 
