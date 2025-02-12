@@ -1,13 +1,9 @@
-import argparse
+#! /usr/bin/env python3
+
 import os, sys
 import shutil
 import time
 from pathlib import Path
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
-
-print(sys.path)
 
 from rospy import loginfo
 
@@ -19,7 +15,6 @@ from numpy import random
 import numpy as np
 import torchvision.transforms as transforms
 
-from YOLOP.lib.config import cfg
 from YOLOP.lib.utils.utils import create_logger, select_device, time_synchronized
 from YOLOP.lib.utils.augmentations import letterbox_for_img
 from YOLOP.lib.models import get_net
@@ -129,17 +124,3 @@ class Detection:
     def detect(self, img0: np.ndarray) -> np.ndarray:
         with torch.no_grad():
             return self.__detect(img0)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default='weights/End-to-end.pth', help='model.pth path(s)')
-    parser.add_argument('--source', type=str, default='inference/videos', help='source')  # file/folder   ex:inference/images
-    parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
-    parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--save-dir', type=str, default='inference/output', help='directory to save results')
-    parser.add_argument('--augment', action='store_true', help='augmented inference')
-    parser.add_argument('--update', action='store_true', help='update all models')
-    opt = parser.parse_args()
