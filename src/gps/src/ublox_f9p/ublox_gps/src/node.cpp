@@ -134,7 +134,7 @@ void UbloxNode::addProductInterface(std::string product_category,
 }
 
 void UbloxNode::getRosParams() {
-  nh->param("device", device_, std::string("/dev/ttyACM0"));
+  nh->param("device", device_, std::string("/dev/ttyGPS1"));
   nh->param("frame_id", frame_id, std::string("gps"));
 
   // Save configuration parameters
@@ -144,7 +144,7 @@ void UbloxNode::getRosParams() {
   getRosUint("save/device", save_.deviceMask, 0);
 
   // UART 1 params
-  getRosUint("uart1/baudrate", baudrate_, 9600);
+  getRosUint("uart1/baudrate", baudrate_, 115200);
   getRosUint("uart1/in", uart_in_, ublox_msgs::CfgPRT::PROTO_UBX
                                     | ublox_msgs::CfgPRT::PROTO_NMEA
                                     | ublox_msgs::CfgPRT::PROTO_RTCM);
@@ -797,7 +797,7 @@ void UbloxFirmware6::callbackNavPosLlh(const ublox_msgs::NavPOSLLH& m) {
         nh->advertise<ublox_msgs::NavPOSLLH>("navposllh", kROSQueueSize);
     publisher.publish(m);
   }
-
+  ROS_INFO("HI_HI");
   // Position message
   static ros::Publisher fixPublisher =
       nh->advertise<sensor_msgs::NavSatFix>("fix", kROSQueueSize);
@@ -1273,6 +1273,7 @@ bool UbloxFirmware8::configureUblox() {
 
 void UbloxFirmware8::subscribe() {
   // Whether to publish Nav PVT messages
+  ROS_INFO("ubloxfirware 8");
   nh->param("publish/nav/pvt", enabled["nav_pvt"], enabled["nav"]);
   // Subscribe to Nav PVT
   gps.subscribe<ublox_msgs::NavPVT>(

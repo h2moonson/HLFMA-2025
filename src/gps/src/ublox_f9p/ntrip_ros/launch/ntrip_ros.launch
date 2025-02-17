@@ -6,11 +6,12 @@
 
 <node pkg="ntrip_ros" type="ntripclient.py" name="ntrip_ros" output="screen">
 	<param name="rtcm_topic" value="/ublox_gps/rtcm"/>
-	<param name="ntrip_server" value="RTS2.ngii.go.kr:2101"/>
+	<param name="ntrip_server" value="RTS2.ngii.go.kr:2101"/> 
 	<param name="ntrip_user" value="foscar2025"/>
-	<param name="ntrip_pass" value="ngii"/>
-	<param name="ntrip_stream" value="VRS-RTCM31"/>
-	<!-- <param name="nmea_gga" value="$GPGGA,175209.731,3739.012,N,12704.040,E,1,12,1.0,0.0,M,0.0,M,,*6A"/> 집 기준 좌표 -->
-	<param name="nmea_gga" value="$GPGGA,055040.351,3736.617,N,12659.812,E,1,12,1.0,0.0,M,0.0,M,,*6E"/> <!--학교 기준 좌표-->
+	<param name="ntrip_pass" value="ngii"/> 
+	<param name="ntrip_stream" value="VRS-RTCM32"/>
+	<!-- <param name="nmea_gga" value="$GPGGA,091440.796,3739.040,N,12703.848,E,1,12,1.0,0.0,M,0.0,M,,*67"/> //집 근처 공원 -->
+	<!-- <param name="nmea_gga" value="$GPGGA,041524.865,3736.655,N,12659.803,E,1,12,1.0,0.0,M,0.0,M,,*66"/>  -->
+	<param name="nmea_gga" value="$GPGGA,060231.105,3736.618,N,12659.816,E,1,12,1.0,0.0,M,0.0,M,,*64"/>
 </node>
 </launch>

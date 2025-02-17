@@ -1,12 +1,11 @@
-# Configuration Settings for ZED-F9P device
-
-debug: 1                    # Range 0-4 (0 means no debug statements will print)
+debug: 1  # Debug 레벨 (0-4)
 
 device: /dev/ttyGPS1
 frame_id: gps
 
+# 시리얼 통신 설정
 uart1:
-  baudrate: 460800
+  baudrate: 115200  # 사용 가능한 baud rate로 변경 가능 (9600, 38400, 57600, 115200 등)
 
 # Enable u-blox message publishers
 publish:
@@ -17,3 +16,14 @@ publish:
     posllh: true
     posecef: true
 
+subscribe:
+  all: false
+  rxm:
+    all: true
+  nav:
+    all: true
+  rtcm:
+    all: true  # RTCM 메시지 구독 활성화
+
+rtcm:
+  enable: true

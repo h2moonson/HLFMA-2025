@@ -772,6 +772,7 @@ class UbloxFirmware7Plus : public UbloxFirmware {
   void callbackNavPvt(const NavPVT& m) {
     if(enabled["nav_pvt"]) {
       // NavPVT publisher
+      ROS_INFO("hihi callback NavPvt");
       static ros::Publisher publisher = nh->advertise<NavPVT>("navpvt",
                                                               kROSQueueSize);
       publisher.publish(m);
