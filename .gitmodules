@@ -1,3 +1,7 @@
 [submodule "src/vision/src/YOLOP"]
 	path = src/vision/src/YOLOP
 	url = https://github.com/hustvl/YOLOP.git
+[submodule "src/vision/src/tensorrtx"]
+	path = src/vision/src/tensorrtx
+	url = https://github.com/powerslam/tensorrtx.git
+	branch = ieve_2025/PC
