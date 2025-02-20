@@ -797,7 +797,6 @@ void UbloxFirmware6::callbackNavPosLlh(const ublox_msgs::NavPOSLLH& m) {
         nh->advertise<ublox_msgs::NavPOSLLH>("navposllh", kROSQueueSize);
     publisher.publish(m);
   }
-  ROS_INFO("HI_HI");
   // Position message
   static ros::Publisher fixPublisher =
       nh->advertise<sensor_msgs::NavSatFix>("fix", kROSQueueSize);
@@ -1852,6 +1851,17 @@ void TimProduct::initializeRosDiagnostics() {
 
 void rtcmCallback(const rtcm_msgs::Message::ConstPtr &msg)
 {
+  ROS_INFO_STREAM("Received RTCM message of size: " << msg->message.size());
+  if (msg->message.size() > 0) {
+      ROS_INFO_STREAM("RTCM Header: " << std::hex << (int)msg->message[0]);
+  }
+  if (msg->message.size() > 1) {
+      ROS_INFO_STREAM("RTCM Second Byte: " << std::hex << (int)msg->message[1]);
+  }
+  if (msg->message.size() > 2) {
+      ROS_INFO_STREAM("RTCM Third Byte: " << std::hex << (int)msg->message[2]);
+  }
+
   gps.sendRtcm(msg->message);
 }
 
@@ -1863,7 +1873,7 @@ int main(int argc, char** argv) {
 
   ros::NodeHandle param_nh("~");
   std::string rtcm_topic;
-  param_nh.param("ublox_gps/rtcm", rtcm_topic, std::string("rtcm"));
+  param_nh.param("/ublox_gps/rtcm", rtcm_topic, std::string("rtcm"));
   subRTCM = nh->subscribe(rtcm_topic, 10, rtcmCallback);
   
 

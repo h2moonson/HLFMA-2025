@@ -57,11 +57,11 @@ class ntripconnect(Thread):
         headers = {
             'Ntrip-Version': 'Ntrip/2.0',
             'User-Agent': 'NTRIP ntrip_ros',
-            'Connection': 'close',
+            'Connection': 'keep-alive',
             'Authorization': 'Basic ' + b64encode((self.ntc.ntrip_user + ':' + self.ntc.ntrip_pass).encode()).decode("ascii")
         }
-        connection = HTTPConnection(self.ntc.ntrip_server)
-        connection.set_debuglevel(1)
+        connection = HTTPConnection(self.ntc.ntrip_server, timeout=30)
+        connection.set_debuglevel(3)
         print("[DEBUG] Sending GET request to NTRIP caster")
         connection.request('GET', '/' + self.ntc.ntrip_stream, self.ntc.nmea_gga, headers)
         response = connection.getresponse()
@@ -78,6 +78,7 @@ class ntripconnect(Thread):
         while not self.stop:
             print("[DEBUG] Waiting for RTCM data...")
             data = response.read(1)
+            rospy.loginfo(f"{not data}")
             if len(data) != 0:
                 if data[0] == 211:
                     print("[DEBUG] RTCM header detected")

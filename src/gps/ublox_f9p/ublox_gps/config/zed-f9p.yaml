@@ -3,9 +3,9 @@ debug: 1  # Debug 레벨 (0-4)
 device: /dev/ttyGPS1
 frame_id: gps
 
-# 시리얼 통신 설정
-uart1:
-  baudrate: 115200  # 사용 가능한 baud rate로 변경 가능 (9600, 38400, 57600, 115200 등)
+# usb:
+#   in: 7         # USB 입력 프로토콜 비트마스크 (예: UBX|NMEA|RTCM 등; 값은 사용 환경에 맞게)
+#   out: 7       # USB 출력 프로토콜 비트마스크
 
 # Enable u-blox message publishers
 publish:
