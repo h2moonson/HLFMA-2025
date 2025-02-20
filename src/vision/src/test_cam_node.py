@@ -21,7 +21,7 @@ class TestCamNode:
         file_path = os.path.join(pkg_path, path)
 
         self.bridge = CvBridge()
-        self.cam_pub = rospy.Publisher('/usb_cam/image_raw', Image, queue_size=10)
+        self.cam_pub = rospy.Publisher('/usb_cam/image_raw', Image, queue_size=1)
 
         self.cap = cv2.VideoCapture(file_path)
        

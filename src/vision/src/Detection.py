@@ -14,6 +14,9 @@ import torch.backends.cudnn as cudnn
 from numpy import random
 import numpy as np
 import torchvision.transforms as transforms
+import torchvision
+
+print(torch.version.cuda, torchvision.version.cuda, torch.__version__)
 
 from YOLOP.lib.utils.utils import create_logger, select_device, time_synchronized
 from YOLOP.lib.utils.augmentations import letterbox_for_img
@@ -34,11 +37,12 @@ transform=transforms.Compose([
 class Detection:
     def __init__(self, cfg, opt):
         logger, _, _ = create_logger(
-        cfg, cfg.LOG_DIR, 'test')
+            cfg, cfg.LOG_DIR, 'test')
 
         self.opt = opt
 
-        self.device = select_device(logger,opt.device)
+        print('@@@device@@@', opt.device, opt)
+        self.device = select_device(logger, opt.device)
         self.half = self.device.type != 'cpu'  # half precision only supported on CUDA
 
         # Load model
@@ -52,6 +56,7 @@ class Detection:
         self.names = self.model.module.names if hasattr(self.model, 'module') else self.model.names
         self.colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(self.names))]
 
+        self.img_size = opt.img_size
         img = torch.zeros((1, 3, opt.img_size, opt.img_size), device=self.device)  # init img
         _ = self.model(img.half() if self.half else img) if self.device.type != 'cpu' else None  # run once
         self.model.eval()
