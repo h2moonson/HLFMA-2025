@@ -61,10 +61,8 @@
 
 #include <dynamic_reconfigure/server.h>
 
-#include <lidar_object_detection/objectDetectorRacetrackConfig.h>
-#include <lidar_object_detection/objectDetectorSangamConfig.h>
 #include <lidar_object_detection/objectDetectorAccConfig.h>
-#include <lidar_object_detection/objectDetectorDynamicObstacleConfig.h>
+#include <lidar_object_detection/objectDetectorConfig.h>
 
 #include "lidar_object_detection/Boundingbox.h"
 #include "lidar_object_detection/ObjectInfo.h"

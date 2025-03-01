@@ -39,9 +39,8 @@ generate_messages(
 
 
 generate_dynamic_reconfigure_options(
-  cfg/config_racetrack.cfg
-  cfg/config_sangam.cfg
   cfg/config_acc.cfg
+  cfg/config_without_clustering.cfg
 )
 
 
@@ -61,20 +60,16 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-add_executable(object_detection_racetrack src/object_detection_racetrack.cpp)
-target_link_libraries(object_detection_racetrack ${catkin_LIBRARIES})
-add_dependencies(object_detection_racetrack ${PROJECT_NAME}_gencfg)
-
-
-add_executable(object_detection_sangam src/object_detection_sangam.cpp)
-target_link_libraries(object_detection_sangam ${catkin_LIBRARIES})
-add_dependencies(object_detection_sangam ${PROJECT_NAME}_gencfg)
-
-
 add_executable(object_detection_acc src/object_detection_acc.cpp)
 target_link_libraries(object_detection_acc ${catkin_LIBRARIES})
 add_dependencies(object_detection_acc ${PROJECT_NAME}_gencfg)
 
-add_executable(object_detection_dynamic_obstacle src/object_detection_dynamic_obstacle.cpp)
-target_link_libraries(object_detection_dynamic_obstacle ${catkin_LIBRARIES})
-add_dependencies(object_detection_dynamic_obstacle ${PROJECT_NAME}_gencfg)
+add_executable(od_without_clustering src/od_without_clustering.cpp)
+target_link_libraries(od_without_clustering ${catkin_LIBRARIES})
+add_dependencies(od_without_clustering ${PROJECT_NAME}_gencfg)
+
+# Specify where the Python scripts are located
+catkin_install_python(PROGRAMS
+    /home/hmson/ieve_2025/src/lidar_object_detection/scripts/2d_gridmap.py
+    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)

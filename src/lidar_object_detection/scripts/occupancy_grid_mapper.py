@@ -14,13 +14,13 @@ class OccupancyGridMapper:
         self.height = rospy.get_param("~height", 200)  # 격자 세로 셀 개수
         self.origin_x = rospy.get_param("~origin_x", -20.0)  # 격자 원점 (global 좌표계에서)
         self.origin_y = rospy.get_param("~origin_y", -20.0)
-        self.ground_threshold = rospy.get_param("~ground_threshold", 0.2)  # 지면 제거: z 값이 이 값 이하면 무시
+        self.ground_threshold = rospy.get_param("~ground_threshold", -10.0)  # 지면 제거: z 값이 이 값 이하면 무시
 
         # OccupancyGrid 메시지 퍼블리셔
         self.pub = rospy.Publisher("occupancy_grid", OccupancyGrid, queue_size=1)
-        # Velodyne 포인트 클라우드 구독 (메시지 타입: sensor_msgs/PointCloud2)
-        rospy.Subscriber("velodyne_points", PointCloud2, self.pc_callback)
-    
+        # Velodyne 포인트 > roi 자른 후 (메시지 타입: sensor_msgs/PointCloud2)
+        rospy.Subscriber("roi_raw", PointCloud2, self.pc_callback)
+
     def pc_callback(self, msg):
         # PointCloud2 메시지를 numpy array로 변환 (x, y, z만 추출)
         points = np.array(list(point_cloud2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))))
@@ -39,7 +39,7 @@ class OccupancyGridMapper:
         cell_x = np.floor(xs / self.resolution).astype(np.int32)
         cell_y = np.floor(ys / self.resolution).astype(np.int32)
 
-        # 격자 범위 내에 있는 점들만 선택
+        # 격자 범위 내에 있는 점들만 선택 = 즉, ROI 영역만 처리 
         valid = (cell_x >= 0) & (cell_x < self.width) & (cell_y >= 0) & (cell_y < self.height)
         cell_x = cell_x[valid]
         cell_y = cell_y[valid]
