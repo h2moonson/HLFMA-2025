@@ -70,6 +70,7 @@ add_dependencies(od_without_clustering ${PROJECT_NAME}_gencfg)
 
 # Specify where the Python scripts are located
 catkin_install_python(PROGRAMS
-    /home/hmson/ieve_2025/src/lidar_object_detection/scripts/2d_gridmap.py
+    scripts/lattice_basic.py
+    scripts/occupancy_grid_mapper.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
