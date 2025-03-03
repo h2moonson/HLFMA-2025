@@ -72,6 +72,7 @@ add_dependencies(od_without_clustering ${PROJECT_NAME}_gencfg)
 # Specify where the Python scripts are located
 catkin_install_python(PROGRAMS
     scripts/lattice_basic.py
+    scripts/grid_sliding_window.py
     scripts/occupancy_grid_mapper.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

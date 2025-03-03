@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+import rospy
+import math
+import cv2
+import numpy as np
+from geometry_msgs.msg import Point, PoseStamped, Quaternion
+from nav_msgs.msg import Path, OccupancyGrid
+from visualization_msgs.msg import Marker, MarkerArray
+from scipy.interpolate import splprep, splev  # 3차 보간에 사용
+
+class GridSlidingWindow:
+    def __init__(self):
+        self.occ_grid = None
+        self.occ_grid_img = None
+        self.img_height = None  # 원본 occupancy grid의 height
+        self.img_width = None   # 원본 occupancy grid의 width
+        self.occ_grid_resolution = None
+        self.origin_x = 0.0  # OccupancyGrid의 원점 x
+        self.origin_y = 0.0  # OccupancyGrid의 원점 y
+
+        self.window_width = 15
+        self.window_height = 5
+        self.min_pixel_threshold = 1
+        self.max_empty_windows = 5
+        
+        self.local_path_pub = rospy.Publisher("local_path", Path, queue_size=1)
+        rospy.Subscriber("occupancy_grid", OccupancyGrid, self.occupancy_grid_callback)
+
+    def convert_rotated_to_original(self, point):
+        """
+        회전된 이미지 좌표 (x_r, y_r)를 원래 OccupancyGrid 좌표계 (grid index 기준)로 변환.
+        변환 과정:
+          1. grid_data_flipped를 90도 반시계 회전한 결과가 img_rotated.
+          2. 회전된 좌표 (x_r, y_r)는 원본 flipped 이미지 상에서 (i_flipped, j_flipped)와 다음 관계를 가짐:
+             i_flipped = x_r, j_flipped = y_r.
+          3. grid_data_flipped는 원본 grid_data를 y축 반전한 것이므로,
+             i_flipped = (원본 height - 1) - i_orig  ==> i_orig = (원본 height - 1) - x_r
+             j_flipped = j_orig  ==> j_orig = y_r
+        따라서 최종적으로,
+            x_orig = j_orig = y_r
+            y_orig = (원본 height - 1) - x_r
+        """
+        x_r, y_r = point
+        x_orig = y_r
+        y_orig = self.img_height - 1 - x_r
+        return (x_orig, y_orig)
+
+    def occupancy_grid_callback(self, msg):
+        self.occ_grid = msg 
+        self.occ_grid_resolution = msg.info.resolution
+        self.img_height = msg.info.height
+        self.img_width = msg.info.width
+        self.origin_x = msg.info.origin.position.x
+        self.origin_y = msg.info.origin.position.y
+
+        # 회전된 이미지 좌표계로 lane point 검출
+        self.occ_grid_img, left_lane_points, right_lane_points = self.process_occupancy_grid(self.occ_grid)
+
+        if left_lane_points.shape[0] == 0 or right_lane_points.shape[0] == 0:
+            return
+        
+        # 회전된 좌표계에서 검출된 포인트들을 원래 occupancy grid 좌표계 (grid index)로 변환
+        left_orig = np.array([self.convert_rotated_to_original(pt) for pt in left_lane_points])
+        right_orig = np.array([self.convert_rotated_to_original(pt) for pt in right_lane_points])
+        
+        # 원래 좌표계에서 x 좌표 기준 정렬 (낮은 값부터)
+        left_orig = left_orig[left_orig[:, 0].argsort()]
+        right_orig = right_orig[right_orig[:, 0].argsort()]
+
+        # 원래 grid index 값을 기반으로 Path 생성 (origin 보정 및 해상도 적용)
+        waypoint_info = Path()
+        waypoint_info.header.frame_id = 'map'
+        waypoint_info.header.stamp = rospy.Time.now()
+        left_idx, right_idx = 0, 0
+
+        while left_idx < len(left_orig) and right_idx < len(right_orig):
+            pose_stamped = PoseStamped()
+            pose_stamped.header.frame_id = 'map'
+            pose_stamped.header.stamp = rospy.Time.now()
+            avg_x = (left_orig[left_idx][0] + right_orig[right_idx][0]) / 2
+            avg_y = (left_orig[left_idx][1] + right_orig[right_idx][1]) / 2
+            # grid index -> 실제 좌표 (미터) 변환 후 origin 보정
+            pose_stamped.pose.position.x = self.origin_x + avg_x * self.occ_grid_resolution - 0.25
+            pose_stamped.pose.position.y = self.origin_y + avg_y * self.occ_grid_resolution
+            pose_stamped.pose.position.z = 0.0
+            pose_stamped.pose.orientation = Quaternion(0, 0, 0, 1)
+            waypoint_info.poses.append(pose_stamped)
+            left_idx += 1
+            right_idx += 1
+
+        while left_idx < len(left_orig):
+            pose_stamped = PoseStamped()
+            pose_stamped.header.frame_id = 'map'
+            pose_stamped.header.stamp = rospy.Time.now()
+            avg_x = (left_orig[left_idx][0] + right_orig[-1][0]) / 2
+            avg_y = (left_orig[left_idx][1] + right_orig[-1][1]) / 2
+            pose_stamped.pose.position.x = self.origin_x + avg_x * self.occ_grid_resolution - 0.25
+            pose_stamped.pose.position.y = self.origin_y + avg_y * self.occ_grid_resolution
+            pose_stamped.pose.position.z = 0.0
+            pose_stamped.pose.orientation = Quaternion(0, 0, 0, 1)
+            waypoint_info.poses.append(pose_stamped)
+            left_idx += 1
+
+        while right_idx < len(right_orig):
+            pose_stamped = PoseStamped()
+            pose_stamped.header.frame_id = 'map'
+            pose_stamped.header.stamp = rospy.Time.now()
+            avg_x = (left_orig[-1][0] + right_orig[right_idx][0]) / 2
+            avg_y = (left_orig[-1][1] + right_orig[right_idx][1]) / 2
+            pose_stamped.pose.position.x = self.origin_x + avg_x * self.occ_grid_resolution - 0.25
+            pose_stamped.pose.position.y = self.origin_y + avg_y * self.occ_grid_resolution
+            pose_stamped.pose.position.z = 0.0
+            pose_stamped.pose.orientation = Quaternion(0, 0, 0, 1)
+            waypoint_info.poses.append(pose_stamped)
+            right_idx += 1
+        
+        self.local_path_pub.publish(waypoint_info)
+
+    def sliding_window_lane_detection_side(self, img_half, window_width, window_height, min_pixel_threshold):
+        # img_half는 단일 채널 8비트 이미지 (CV_8U)여야 함
+        out_img = cv2.cvtColor(img_half, cv2.COLOR_GRAY2BGR)
+        height, width = img_half.shape
+
+        # 역이진화: occupied 픽셀(점유된 영역)을 검출
+        ret, binary = cv2.threshold(img_half, 127, 255, cv2.THRESH_BINARY_INV)
+        nonzero = cv2.findNonZero(binary)
+        if nonzero is None:
+            return [], out_img
+
+        nonzero = nonzero.reshape(-1, 2)
+        start_y = height - 1
+        # start_y = int(np.max(nonzero[:, 1]))
+        min_y_occupied = int(np.min(nonzero[:, 1]))
+
+        bottom_indices = np.where(nonzero[:, 1] >= start_y - 5)[0]
+        if len(bottom_indices) > 0:
+            current_x = int(np.mean(nonzero[bottom_indices, 0]))
+        else:
+            current_x = width // 2
+
+        lane_points = []
+        current_y = start_y
+        consecutive_empty = 0
+
+        while True:
+            if current_y - window_height < min_y_occupied or current_y < 0:
+                break
+
+            win_y_low = current_y - window_height
+            win_y_high = current_y
+            win_x_low = max(0, current_x - window_width // 2)
+            win_x_high = min(width, current_x + window_width // 2)
+
+            window_img = img_half[win_y_low:win_y_high, win_x_low:win_x_high]
+            ret, window_binary = cv2.threshold(window_img, 127, 255, cv2.THRESH_BINARY_INV)
+            nonzero_window = cv2.findNonZero(window_binary)
+
+            if nonzero_window is not None and len(nonzero_window) >= min_pixel_threshold:
+                nonzero_window = nonzero_window.reshape(-1, 2)
+                current_x = win_x_low + int(np.mean(nonzero_window[:, 0]))
+                consecutive_empty = 0
+                color = (0, 255, 0)
+            else:
+                consecutive_empty += 1
+                if consecutive_empty >= self.max_empty_windows:
+                    break
+                color = (0, 0, 255)
+
+            center_y = (win_y_low + win_y_high) // 2
+            lane_points.append((current_x, center_y))
+            cv2.rectangle(out_img, (win_x_low, win_y_low), (win_x_high, win_y_high), color, 2)
+            current_y -= window_height
+
+        return lane_points, out_img
+
+    def process_occupancy_grid(self, msg: OccupancyGrid):
+        # OccupancyGrid 데이터를 (height, width) shape의 numpy 배열로 변환
+        grid_data = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+        # 0~100 값을 0~255 범위로 변환 후 반전 (점유된 곳은 어둡게)
+        img = 255 - (grid_data * 255 // 100).astype(np.uint8)
+        # y축 반전: 원래 OccupancyGrid의 아래쪽이 원점일 수 있으므로
+        grid_data_flipped = img[::-1]
+        rospy.loginfo("grid_data_flipped shape: {}".format(np.shape(grid_data_flipped)))
+        # 90도 반시계 회전
+        img_rotated = cv2.rotate(grid_data_flipped, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        rospy.loginfo("img_rotated shape: {}".format(np.shape(img_rotated)))
+        
+        # 회전된 이미지에서 좌우 분할 (실제 열 크기를 기준)
+        rotated_mid_x = img_rotated.shape[1] // 2
+        left_img = img_rotated[:, :rotated_mid_x]
+        right_img = img_rotated[:, rotated_mid_x:]
+        
+        left_lane_points, left_vis = self.sliding_window_lane_detection_side(left_img, self.window_width, self.window_height, self.min_pixel_threshold)
+        right_lane_points, right_vis = self.sliding_window_lane_detection_side(right_img, self.window_width, self.window_height, self.min_pixel_threshold)
+        
+        left_lane_points = np.array(left_lane_points)
+        right_lane_points = np.array(right_lane_points)
+
+        # 우측 이미지 좌표는 회전된 이미지 기준이므로 x 좌표에 offset 적용
+        if right_lane_points.shape[0] > 0:
+            right_lane_points[:, 0] += rotated_mid_x
+
+        combined_vis = np.zeros((img_rotated.shape[0], img_rotated.shape[1], 3), dtype=np.uint8)
+        combined_vis[:, :rotated_mid_x] = left_vis
+        combined_vis[:, rotated_mid_x:] = right_vis
+
+        expanded_img = cv2.resize(combined_vis, (500, 550), interpolation=cv2.INTER_LINEAR)
+        cv2.imshow("Occupancy Map with ROI and Sliding Windows", expanded_img)
+        cv2.waitKey(1)
+        
+        return grid_data_flipped, left_lane_points, right_lane_points
+
+
+if __name__ == '__main__':
+    rospy.init_node("grid_sliding_window", anonymous=True)
+    grid_sliding_window = GridSlidingWindow()
+    rospy.spin()
