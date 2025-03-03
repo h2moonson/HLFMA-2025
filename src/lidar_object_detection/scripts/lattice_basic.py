@@ -20,7 +20,56 @@ R = 0.1   # 측정 노이즈 분산
 def occupancy_grid_callback(msg):
     global global_occ_grid
     global_occ_grid = msg  # 최신 occupancy grid map 저장
-    process_occupancy_grid(msg)
+    left_lane_points, right_lane_points = process_occupancy_grid(msg)
+
+    if left_lane_points.shape[0] == 0 or right_lane_points.shape[0] == 0:
+        return
+    
+    left_lane_points = left_lane_points[left_lane_points[:, 0].argsort()]
+    right_lane_points = right_lane_points[right_lane_points[:, 0].argsort()]
+
+    left_idx, right_idx = 0, 0
+    waypoint_info = Path()
+    waypoint_info.header.frame_id = 'map'
+    waypoint_info.header.stamp = rospy.Time.now()
+
+    while left_idx < len(left_lane_points) and right_idx < len(right_lane_points):
+        pose_stamped = PoseStamped()
+        pose_stamped.header.frame_id = 'map'
+        pose_stamped.header.stamp = rospy.Time.now()
+        pose_stamped.pose.position.x = (left_lane_points[left_idx][0] + right_lane_points[right_idx][0]) / 20
+        pose_stamped.pose.position.y = msg.info.height - (left_lane_points[left_idx][1] + right_lane_points[right_idx][1]) / 20
+
+        waypoint_info.poses.append(pose_stamped)
+
+        left_idx += 1
+        right_idx += 1
+
+    while left_idx < len(left_lane_points):
+        pose_stamped = PoseStamped()
+        pose_stamped.header.frame_id = 'map'
+        pose_stamped.header.stamp = rospy.Time.now()
+        pose_stamped.pose.position.x = (left_lane_points[left_idx][0] + right_lane_points[-1][0]) / 20
+        pose_stamped.pose.position.y = msg.info.height - (left_lane_points[left_idx][1] + right_lane_points[-1][1]) / 20 - 0.25
+
+        waypoint_info.poses.append(pose_stamped)
+
+        left_idx += 1
+
+    while right_idx < len(right_lane_points):
+        pose_stamped = PoseStamped()
+        pose_stamped.header.frame_id = 'map'
+        pose_stamped.header.stamp = rospy.Time.now()
+        pose_stamped.pose.position.x = (left_lane_points[-1][0] + right_lane_points[right_idx][0]) / 20
+        pose_stamped.pose.position.y = msg.info.height - (left_lane_points[-1][1] + right_lane_points[right_idx][1]) / 20
+
+        waypoint_info.poses.append(pose_stamped)
+
+        right_idx += 1
+
+    global local_path_pub
+    local_path_pub.publish(waypoint_info)
+
 
 def latticePlanner(vehicle_state, lookahead_distance, lane_offsets, step, curvature_delta=1.0):
     """
@@ -166,42 +215,26 @@ def occupancy_to_image(occ):
     
     # 90도 반시계 방향으로 회전
     img_rotated = cv2.rotate(img_flipped, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
     return img_rotated
 
-def sliding_window_lane_detection_side_modified(img, window_width=10, window_height=5, min_pixel_threshold=1):
-    """
-    새로운 슬라이딩 윈도우 기법:
-      - 입력 이미지(한쪽 영역)에서 occupied 픽셀(THRESH_BINARY_INV 적용) 분포를 분석하여,
-        이미지 하단에서 시작하는 occupied 픽셀들의 평균 x 좌표를 초기 current_x로 설정합니다.
-      - 이후 위쪽으로 창(window)을 쌓으면서, 각 창 내의 occupied 픽셀의 평균 x 좌표로 창의 x 위치를 업데이트합니다.
-      - 만약 다음 창의 상단이 해당 영역의 occupied 픽셀 중 가장 위쪽(min y)보다 위라면 창 쌓기를 중단합니다.
-      
-    Args:
-      img: 입력 그레이스케일 이미지 (한쪽 영역)
-      window_width, window_height: 각 창의 크기 (픽셀 단위)
-      min_pixel_threshold: 창 내에서 occupied 픽셀의 최소 갯수 (1개라도 있으면 업데이트)
-      
-    Returns:
-      lane_points: 각 창의 중심 좌표 (x, y) 리스트
-      out_img: 창 영역이 표시된 컬러 이미지 (시각화용)
-    """
+def sliding_window_lane_detection_side_modified(img, window_width, window_height, min_pixel_threshold, max_empty_windows=3):
     out_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     height, width = img.shape
 
-    # 전체 영역에 대해 occupied 픽셀(역이진화: THRESH_BINARY_INV) 검출
+    # 전체 영역에서 역이진화(THRESH_BINARY_INV)를 적용하여 occupied 픽셀 검출
     ret, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     nonzero = cv2.findNonZero(binary)
     if nonzero is None:
         return [], out_img
 
     nonzero = nonzero.reshape(-1, 2)
-    # 시작점: y값이 가장 큰(이미지 하단의) occupied 픽셀
+    # 시작: 이미지 하단의 occupied 픽셀 중 y값이 가장 큰 점
     start_y = int(np.max(nonzero[:, 1]))
-    # 종료 조건: occupied 픽셀 중 y값이 가장 작은(이미지 상단의) 값
+    # 종료 조건: occupied 픽셀 중 y값이 가장 작은 값
     min_y_occupied = int(np.min(nonzero[:, 1]))
 
-    # 기존에는 단순히 영역 중앙(width//2)에서 시작했으나,
-    # 여기서는 하단 근처(예: start_y에서 5픽셀 이내)의 occupied 픽셀들의 평균 x로 초기 current_x 결정
+    # 이미지 하단 근처(예: start_y에서 5픽셀 이내)의 occupied 픽셀 평균 x 좌표를 초기 current_x로 설정
     bottom_indices = np.where(nonzero[:, 1] >= start_y - 5)[0]
     if len(bottom_indices) > 0:
         current_x = int(np.mean(nonzero[bottom_indices, 0]))
@@ -210,8 +243,8 @@ def sliding_window_lane_detection_side_modified(img, window_width=10, window_hei
 
     lane_points = []
     current_y = start_y
+    consecutive_empty = 0  # 연속된 빈 창의 개수 카운터
 
-    # 위쪽으로 창을 쌓으며 진행 (y 좌표 감소)
     while True:
         if current_y - window_height < min_y_occupied + 10:
             break
@@ -225,36 +258,29 @@ def sliding_window_lane_detection_side_modified(img, window_width=10, window_hei
         ret, window_binary = cv2.threshold(window_img, 127, 255, cv2.THRESH_BINARY_INV)
         nonzero_window = cv2.findNonZero(window_binary)
 
-        # 만약 창 내 occupied 픽셀이 존재하면 평균 x 좌표로 current_x 업데이트
+        # occupied 픽셀이 충분히 있는 경우
         if nonzero_window is not None and len(nonzero_window) >= min_pixel_threshold:
             nonzero_window = nonzero_window.reshape(-1, 2)
             current_x = win_x_low + int(np.mean(nonzero_window[:, 0]))
+            consecutive_empty = 0  # 유효한 window가 나오면 카운터 리셋
+            color = (0, 255, 0)  # valid window: 초록색 사각형
+        else:
+            consecutive_empty += 1
+            # 빈 창이 연속 max_empty_windows 이상이면 탐색 중단
+            if consecutive_empty >= max_empty_windows:
+                break
+            # 빈 window라도 이전 current_x를 유지하여 lane point 추가
+            color = (0, 0, 255)  # 빈 window: 빨간색 사각형 (표시용)
 
         center_y = (win_y_low + win_y_high) // 2
         lane_points.append((current_x, center_y))
+        cv2.rectangle(out_img, (win_x_low, win_y_low), (win_x_high, win_y_high), color, 2)
 
-        # 시각화를 위해 창 영역과 중심점을 표시
-        cv2.rectangle(out_img, (win_x_low, win_y_low), (win_x_high, win_y_high), (222, 255, 0), 2)
-        cv2.circle(out_img, (current_x, center_y), 3, (0, 0, 255), -1)
-
-        current_y -= window_height  # 위로 한 칸씩 이동
+        current_y -= window_height  # 한 칸 위로 이동
 
     return lane_points, out_img
 
-def sliding_window_lane_detection_both(img, window_width=10, window_height=5, min_pixel_threshold=1):
-    """
-    좌우 영역을 분할한 후, 각 영역에 대해 위에서 정의한 수정된 슬라이딩 윈도우 기법을 적용합니다.
-    
-    Args:
-      img: 입력 그레이스케일 이미지
-      window_width, window_height: 각 창의 크기
-      min_pixel_threshold: 각 창 내에서 occupied 픽셀의 최소 갯수
-      
-    Returns:
-      left_lane_points: 좌측 영역에서 검출된 차선 중심 좌표 리스트
-      right_lane_points: 우측 영역에서 검출된 차선 중심 좌표 리스트
-      out_img: 좌우 영역의 결과를 합친 컬러 이미지 (시각화용)
-    """
+def sliding_window_lane_detection_both(img, window_width=15, window_height=5, min_pixel_threshold=1):
     height, width = img.shape
     mid_x = width // 2
     left_img = img[:, :mid_x]
@@ -262,9 +288,12 @@ def sliding_window_lane_detection_both(img, window_width=10, window_height=5, mi
 
     left_lane_points, left_vis = sliding_window_lane_detection_side_modified(left_img, window_width, window_height, min_pixel_threshold)
     right_lane_points, right_vis = sliding_window_lane_detection_side_modified(right_img, window_width, window_height, min_pixel_threshold)
+    
+    left_lane_points = np.array(left_lane_points)
+    right_lane_points = np.array(right_lane_points)
 
-    # 우측 영역의 좌표는 원본 이미지 기준으로 x 좌표에 mid_x를 더함
-    right_lane_points = [(x + mid_x, y) for (x, y) in right_lane_points]
+    if left_lane_points.shape[0] > 1 and right_lane_points.shape[0] > 1:
+        right_lane_points[:, 1] += mid_x
 
     # 좌우 영역의 시각화 결과 결합
     out_img = np.zeros((height, width, 3), dtype=np.uint8)
@@ -277,30 +306,18 @@ def process_occupancy_grid(occ):
     # OccupancyGrid 메시지를 이미지로 변환
     img = occupancy_to_image(occ)
     
-    # 예시: 이미지의 하단 50% 영역만 사용 (차량 주변, 가까운 영역)
-    height, width = img.shape
-    roi_y_start = int(height * 0.5)
-    roi = img[roi_y_start:height, :]
-    
     # 좌우 영역에 대해 슬라이딩 윈도우 기법 적용
-    left_lane_points, right_lane_points, vis_roi = sliding_window_lane_detection_both(roi)
-    
-    # ROI 영역을 원본 이미지 내의 위치로 복원하려면 y offset 추가
-    left_lane_points = [(x, y + roi_y_start) for (x, y) in left_lane_points]
-    right_lane_points = [(x, y + roi_y_start) for (x, y) in right_lane_points]
-    
+    left_lane_points, right_lane_points, vis_img = sliding_window_lane_detection_both(img)
+
     # ROI 결과를 원본 이미지에 배치 (또는 따로 시각화)
-    vis_img = img.copy()
-    vis_img[roi_y_start:height, :] = cv2.cvtColor(vis_roi, cv2.COLOR_BGR2GRAY)
-    
-    cv2.imshow("Occupancy Map with ROI and Sliding Windows", vis_img)
-    cv2.waitKey(1)
+    vis_img = cv2.resize(vis_img, (500, 550), interpolation= cv2.INTER_LINEAR)
+    # cv2.imshow("Occupancy Map with ROI and Sliding Windows", vis_img)
+    # cv2.waitKey(1)
     
     return left_lane_points, right_lane_points
 
 def main():
     global kalman_initialized, filtered_lane_offset, P, Q, R
-    rospy.init_node("lattice_path_visualizer", anonymous=True)
     
     rospy.Subscriber("occupancy_grid", OccupancyGrid, occupancy_grid_callback)
     # MarkerArray 대신 Path 메시지를 발행할 퍼블리셔 생성
@@ -329,36 +346,38 @@ def main():
             measurement = lane_offsets[meas_index]
         
         # 칼만 필터 업데이트 (1차원)
-        if not kalman_initialized:
-            filtered_lane_offset = measurement
-            P = 1.0
-            kalman_initialized = True
-        else:
-            K = P / (P + R)
-            filtered_lane_offset = filtered_lane_offset + K * (measurement - filtered_lane_offset)
-            P = (1 - K) * P + Q
+        # if not kalman_initialized:
+        #     filtered_lane_offset = measurement
+        #     P = 1.0
+        #     kalman_initialized = True
+        # else:
+        #     K = P / (P + R)
+        #     filtered_lane_offset = filtered_lane_offset + K * (measurement - filtered_lane_offset)
+        #     P = (1 - K) * P + Q
         
         # 필터링된 lane offset에 가장 가까운 candidate index 선택
-        differences = [abs(lo - filtered_lane_offset) for lo in lane_offsets]
-        selected_index = int(np.argmin(differences))
+        # differences = [abs(lo - filtered_lane_offset) for lo in lane_offsets]
+        # selected_index = int(np.argmin(differences))
         
-        selected_path = candidate_paths[selected_index]
-        path_msg = create_path_msg(selected_path, frame_id="map")
-        path_pub.publish(path_msg)
+        # selected_path = candidate_paths[selected_index]
+        # path_msg = create_path_msg(selected_path, frame_id="map")
+        # path_pub.publish(path_msg)
         
-        marker_array = MarkerArray()
-        for i, path in enumerate(candidate_paths):
-            if i == selected_index:
-                color = (1.0, 0.0, 0.0, 1.0)
-                line_width = 0.3
-            else:
-                color = (0.0, 0.0, 1.0, 1.0)
-                line_width = 0.2
-            marker = create_marker_from_path(path, marker_id=i, frame_id="map", color=color, line_width=line_width)
-            marker_array.markers.append(marker)
-        marker_pub.publish(marker_array)
+        # marker_array = MarkerArray()
+        # for i, path in enumerate(candidate_paths):
+        #     if i == selected_index:
+        #         color = (1.0, 0.0, 0.0, 1.0)
+        #         line_width = 0.3
+        #     else:
+        #         color = (0.0, 0.0, 1.0, 1.0)
+        #         line_width = 0.2
+        #     marker = create_marker_from_path(path, marker_id=i, frame_id="map", color=color, line_width=line_width)
+        #     marker_array.markers.append(marker)
+        # marker_pub.publish(marker_array)
         
         rate.sleep()
 
 if __name__ == '__main__':
+    rospy.init_node("lattice_path_visualizer", anonymous=True)
+    local_path_pub = rospy.Publisher('/local_path', Path, queue_size=1)
     main()

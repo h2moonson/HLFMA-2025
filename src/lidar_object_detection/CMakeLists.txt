@@ -22,6 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 add_message_files(
    FILES
+   WaypointInfo.msg
    Boundingbox.msg
    ObjectInfo.msg
    PointInfo.msg

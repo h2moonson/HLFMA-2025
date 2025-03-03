@@ -164,9 +164,9 @@ pcl::PointCloud<PointT>::Ptr voxelGrid(pcl::PointCloud<PointT>::Ptr input) {
 
 void mainCallback(const sensor_msgs::PointCloud2ConstPtr& input) {
     pcl::PointCloud<PointT>::Ptr cloudPtr;
-
     // main process method
     cloudPtr = ROI(input);
+    cloudPtr = voxelGrid(cloudPtr);
 }
 
 void imuCallback(const sensor_msgs::Imu& msg) {
