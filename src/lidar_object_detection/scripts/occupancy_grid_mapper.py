@@ -9,15 +9,15 @@ from geometry_msgs.msg import Pose, Point, Quaternion
 class OccupancyGridMapper:
     def __init__(self):
         # 파라미터 설정: 격자 해상도, 크기, 원점 등 (로컬 영역)
-        self.resolution = rospy.get_param("~resolution", 0.2)  # 셀 크기 (미터)
-        self.width = rospy.get_param("~width", 200)   # 격자 가로 셀 개수
+        self.resolution = rospy.get_param("~resolution", 0.1)  # 셀 크기 (미터)
+        self.width = rospy.get_param("~width", 250)   # 격자 가로 셀 개수
         self.height = rospy.get_param("~height", 200)  # 격자 세로 셀 개수
-        self.origin_x = rospy.get_param("~origin_x", -20.0)  # 격자 원점 (global 좌표계에서)
-        self.origin_y = rospy.get_param("~origin_y", -20.0)
+        self.origin_x = rospy.get_param("~origin_x", -5.0)  # 격자 원점 (global 좌표계에서)
+        self.origin_y = rospy.get_param("~origin_y", -10.0)
         self.ground_threshold = rospy.get_param("~ground_threshold", -10.0)  # 지면 제거: z 값이 이 값 이하면 무시
 
         # 패딩 거리 (미터): 장애물 주변에 팽창시킬 거리
-        self.padding_distance = rospy.get_param("~padding_distance", 0.4)
+        self.padding_distance = rospy.get_param("~padding_distance", 0.2)
         
         # OccupancyGrid 메시지 퍼블리셔
         self.pub = rospy.Publisher("occupancy_grid", OccupancyGrid, queue_size=1)
@@ -61,7 +61,7 @@ class OccupancyGridMapper:
         cell_x = np.floor(xs / self.resolution).astype(np.int32)
         cell_y = np.floor(ys / self.resolution).astype(np.int32)
 
-        # 격자 범위 내에 있는 점들만 선택 (ROI 영역만 처리)
+        # 격자 범위 내에 있는 점들만 선택 (ROI 영역만 처리) >> 어차피 lidar config로 조절해서 큰 의미는 x
         valid = (cell_x >= 0) & (cell_x < self.width) & (cell_y >= 0) & (cell_y < self.height)
         cell_x = cell_x[valid]
         cell_y = cell_y[valid]
