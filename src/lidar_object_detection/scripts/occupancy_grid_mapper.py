@@ -26,20 +26,30 @@ class OccupancyGridMapper:
 
     def apply_padding(self, grid, padding_cells):
         """
-        grid의 각 장애물 셀(값 100) 주변에 padding_cells만큼 팽창시켜,
-        해당 영역도 장애물로 표시합니다.
+        grid의 각 장애물 셀(값 100)에 대해,
+        - x좌표(j 인덱스)가 그리드 폭의 2/3보다 작으면 모든 방향으로 padding_cells 만큼 팽창
+        - x좌표가 2/3 이상이면 수직(i 방향)으로는 2배, 수평(j 방향)으로는 padding_cells 만큼 팽창
         """
         padded_grid = grid.copy()
         height, width = grid.shape
-        # 각 셀을 순회하며 장애물인 경우 주변 영역을 채움
+        threshold = int((3/4) * width)  # x축 3/4 지점 (j 인덱스 기준)
+        
         for i in range(height):
             for j in range(width):
                 if grid[i, j] == 100:
-                    # i, j 주변 padding_cells 만큼 범위 설정
-                    i_min = max(0, i - padding_cells)
-                    i_max = min(height, i + padding_cells + 1)
-                    j_min = max(0, j - padding_cells)
-                    j_max = min(width, j + padding_cells + 1)
+                    if j < threshold:
+                        # x 좌표가 2/3 미만이면 모든 방향 동일한 padding_cells 적용
+                        i_min = max(0, i - padding_cells)
+                        i_max = min(height, i + padding_cells + 1)
+                        j_min = max(0, j - padding_cells)
+                        j_max = min(width, j + padding_cells + 1)
+                    else:
+                        # x 좌표가 2/3 이상이면 수직 방향(i) padding을 2배로 적용
+                        i_min = max(0, i - 2 * padding_cells)
+                        i_max = min(height, i + 2 * padding_cells + 1)
+                        j_min = max(0, j - padding_cells)
+                        j_max = min(width, j + padding_cells + 1)
+                    
                     padded_grid[i_min:i_max, j_min:j_max] = 100
         return padded_grid
 
