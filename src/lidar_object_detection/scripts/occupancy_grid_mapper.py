@@ -92,7 +92,6 @@ class OccupancyGridMapper:
         펼쳐서 [10, 20, 30, 40, 50, 60, 70, 80, 90] 
         '''
         occ_grid.data = grid.flatten().tolist()
-        print(f"start {occ_grid.data} end")
 
         # 결과 메시지 퍼블리시
         self.pub.publish(occ_grid)

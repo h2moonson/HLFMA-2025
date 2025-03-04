@@ -19,7 +19,7 @@ class GridSlidingWindow:
         self.origin_y = 0.0  # OccupancyGrid의 원점 y
 
         self.window_width = 15
-        self.window_height = 5
+        self.window_height = 8
         self.min_pixel_threshold = 1
         self.max_empty_windows = 5
         
@@ -54,14 +54,14 @@ class GridSlidingWindow:
         self.origin_y = msg.info.origin.position.y
 
         # 회전된 이미지 좌표계로 lane point 검출
-        self.occ_grid_img, left_lane_points, right_lane_points = self.process_occupancy_grid(self.occ_grid)
+        self.occ_grid_img, self.left_lane_points, self.right_lane_points = self.process_occupancy_grid(self.occ_grid)
 
-        if left_lane_points.shape[0] == 0 or right_lane_points.shape[0] == 0:
+        if self.left_lane_points.shape[0] == 0 or self.right_lane_points.shape[0] == 0:
             return
         
         # 회전된 좌표계에서 검출된 포인트들을 원래 occupancy grid 좌표계 (grid index)로 변환
-        left_orig = np.array([self.convert_rotated_to_original(pt) for pt in left_lane_points])
-        right_orig = np.array([self.convert_rotated_to_original(pt) for pt in right_lane_points])
+        left_orig = np.array([self.convert_rotated_to_original(pt) for pt in self.left_lane_points])
+        right_orig = np.array([self.convert_rotated_to_original(pt) for pt in self.right_lane_points])
         
         # 원래 좌표계에서 x 좌표 기준 정렬 (낮은 값부터)
         left_orig = left_orig[left_orig[:, 0].argsort()]
@@ -116,7 +116,7 @@ class GridSlidingWindow:
         
         self.local_path_pub.publish(waypoint_info)
 
-    def sliding_window_lane_detection_side(self, img_half, window_width, window_height, min_pixel_threshold):
+    def sliding_window_lane_detection_left(self, img_half, window_width, window_height, min_pixel_threshold):
         # img_half는 단일 채널 8비트 이미지 (CV_8U)여야 함
         out_img = cv2.cvtColor(img_half, cv2.COLOR_GRAY2BGR)
         height, width = img_half.shape
@@ -128,8 +128,7 @@ class GridSlidingWindow:
             return [], out_img
 
         nonzero = nonzero.reshape(-1, 2)
-        start_y = height - 1
-        # start_y = int(np.max(nonzero[:, 1]))
+        start_y = height - 1 - window_height
         min_y_occupied = int(np.min(nonzero[:, 1]))
 
         bottom_indices = np.where(nonzero[:, 1] >= start_y - 5)[0]
@@ -138,8 +137,11 @@ class GridSlidingWindow:
         else:
             current_x = width // 2
 
-        lane_points = []
-        current_y = start_y
+        total_windows = 0         # 전체 창 개수 카운터
+        valid_lane_points = []    # 유효한 창(녹색 창)의 중심 좌표 리스트
+        invalid_lane_points = [] # 유효하지 않은 창(빨간색)의 중심 좌표 리스트
+        total_lane_points = []
+        current_y = start_y 
         consecutive_empty = 0
 
         while True:
@@ -155,23 +157,94 @@ class GridSlidingWindow:
             ret, window_binary = cv2.threshold(window_img, 127, 255, cv2.THRESH_BINARY_INV)
             nonzero_window = cv2.findNonZero(window_binary)
 
+            total_windows += 1  # 전체 창 카운터 증가
+
             if nonzero_window is not None and len(nonzero_window) >= min_pixel_threshold:
                 nonzero_window = nonzero_window.reshape(-1, 2)
                 current_x = win_x_low + int(np.mean(nonzero_window[:, 0]))
                 consecutive_empty = 0
                 color = (0, 255, 0)
+                center_y = (win_y_low + win_y_high) // 2
+                valid_lane_points.append((current_x, center_y))
             else:
                 consecutive_empty += 1
-                if consecutive_empty >= self.max_empty_windows:
-                    break
                 color = (0, 0, 255)
+                invalid_lane_points.append((current_x, current_y))
+                if consecutive_empty >= self.max_empty_windows:
+                    # 일정 개수 이상의 연속된 무효 창이 있으면 종료 맨 위에 올라갈 곳이 없다고 판단되면 버림
+                    invalid_lane_points = invalid_lane_points[:-self.max_empty_windows]
+                    break
 
-            center_y = (win_y_low + win_y_high) // 2
-            lane_points.append((current_x, center_y))
             cv2.rectangle(out_img, (win_x_low, win_y_low), (win_x_high, win_y_high), color, 2)
             current_y -= window_height
+        total_lane_points = valid_lane_points + invalid_lane_points
+        print("L전체 창 개수:", total_windows, "L초록창 개수:", len(valid_lane_points), "L빨간창 개수", len(invalid_lane_points))
+        return total_lane_points, out_img
 
-        return lane_points, out_img
+    def sliding_window_lane_detection_right(self, img_half, window_width, window_height, min_pixel_threshold):
+        # img_half는 단일 채널 8비트 이미지 (CV_8U)여야 함
+        out_img = cv2.cvtColor(img_half, cv2.COLOR_GRAY2BGR)
+        height, width = img_half.shape
+
+        # 역이진화: occupied 픽셀(점유된 영역)을 검출
+        ret, binary = cv2.threshold(img_half, 127, 255, cv2.THRESH_BINARY_INV)
+        nonzero = cv2.findNonZero(binary)
+        if nonzero is None:
+            return [], out_img
+
+        nonzero = nonzero.reshape(-1, 2)
+        start_y = height - 1 - window_height
+        min_y_occupied = int(np.min(nonzero[:, 1]))
+
+        bottom_indices = np.where(nonzero[:, 1] >= start_y - 5)[0]
+        if len(bottom_indices) > 0:
+            current_x = int(np.mean(nonzero[bottom_indices, 0]))
+        else:
+            current_x = width // 2
+
+        total_windows = 0         # 전체 창 개수 카운터
+        valid_lane_points = []    # 유효한 창(녹색 창)의 중심 좌표 리스트
+        invalid_lane_points = [] # 유효하지 않은 창(빨간색)의 중심 좌표 리스트
+        total_lane_points = []
+        current_y = start_y 
+        consecutive_empty = 0
+
+        while True:
+            if current_y - window_height < min_y_occupied or current_y < 0:
+                break
+
+            win_y_low = current_y - window_height
+            win_y_high = current_y
+            win_x_low = max(0, current_x - window_width // 2)
+            win_x_high = min(width, current_x + window_width // 2)
+
+            window_img = img_half[win_y_low:win_y_high, win_x_low:win_x_high]
+            ret, window_binary = cv2.threshold(window_img, 127, 255, cv2.THRESH_BINARY_INV)
+            nonzero_window = cv2.findNonZero(window_binary)
+
+            total_windows += 1  # 전체 창 카운터 증가
+
+            if nonzero_window is not None and len(nonzero_window) >= min_pixel_threshold:
+                nonzero_window = nonzero_window.reshape(-1, 2)
+                current_x = win_x_low + int(np.mean(nonzero_window[:, 0]))
+                consecutive_empty = 0
+                color = (0, 255, 0)
+                center_y = (win_y_low + win_y_high) // 2
+                valid_lane_points.append((current_x, center_y))
+            else:
+                consecutive_empty += 1
+                color = (0, 0, 255)
+                invalid_lane_points.append((current_x, current_y))
+                if consecutive_empty >= self.max_empty_windows:
+                    invalid_lane_points = invalid_lane_points[:-self.max_empty_windows]
+                    # 일정 개수 이상의 연속된 무효 창이 있으면 종료
+                    break
+
+            cv2.rectangle(out_img, (win_x_low, win_y_low), (win_x_high, win_y_high), color, 2)
+            current_y -= window_height
+        total_lane_points = valid_lane_points + invalid_lane_points
+        print("R전체 창 개수:", total_windows, "R초록창 개수:", len(valid_lane_points), "R빨간창 개수", len(invalid_lane_points))
+        return total_lane_points, out_img
 
     def process_occupancy_grid(self, msg: OccupancyGrid):
         # OccupancyGrid 데이터를 (height, width) shape의 numpy 배열로 변환
@@ -180,18 +253,16 @@ class GridSlidingWindow:
         img = 255 - (grid_data * 255 // 100).astype(np.uint8)
         # y축 반전: 원래 OccupancyGrid의 아래쪽이 원점일 수 있으므로
         grid_data_flipped = img[::-1]
-        rospy.loginfo("grid_data_flipped shape: {}".format(np.shape(grid_data_flipped)))
         # 90도 반시계 회전
         img_rotated = cv2.rotate(grid_data_flipped, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        rospy.loginfo("img_rotated shape: {}".format(np.shape(img_rotated)))
         
         # 회전된 이미지에서 좌우 분할 (실제 열 크기를 기준)
         rotated_mid_x = img_rotated.shape[1] // 2
         left_img = img_rotated[:, :rotated_mid_x]
         right_img = img_rotated[:, rotated_mid_x:]
         
-        left_lane_points, left_vis = self.sliding_window_lane_detection_side(left_img, self.window_width, self.window_height, self.min_pixel_threshold)
-        right_lane_points, right_vis = self.sliding_window_lane_detection_side(right_img, self.window_width, self.window_height, self.min_pixel_threshold)
+        left_lane_points, left_vis = self.sliding_window_lane_detection_left(left_img, self.window_width, self.window_height, self.min_pixel_threshold)
+        right_lane_points, right_vis = self.sliding_window_lane_detection_right(right_img, self.window_width, self.window_height, self.min_pixel_threshold)
         
         left_lane_points = np.array(left_lane_points)
         right_lane_points = np.array(right_lane_points)
@@ -203,8 +274,8 @@ class GridSlidingWindow:
         combined_vis = np.zeros((img_rotated.shape[0], img_rotated.shape[1], 3), dtype=np.uint8)
         combined_vis[:, :rotated_mid_x] = left_vis
         combined_vis[:, rotated_mid_x:] = right_vis
-
-        expanded_img = cv2.resize(combined_vis, (500, 550), interpolation=cv2.INTER_LINEAR)
+        # print(combined_vis.shape)
+        expanded_img = cv2.resize(combined_vis, (500, 350), interpolation=cv2.INTER_LINEAR)
         cv2.imshow("Occupancy Map with ROI and Sliding Windows", expanded_img)
         cv2.waitKey(1)
         
