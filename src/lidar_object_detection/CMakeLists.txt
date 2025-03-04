@@ -61,9 +61,6 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-add_executable(object_detection_acc src/object_detection_acc.cpp)
-target_link_libraries(object_detection_acc ${catkin_LIBRARIES})
-add_dependencies(object_detection_acc ${PROJECT_NAME}_gencfg)
 
 add_executable(od_without_clustering src/od_without_clustering.cpp)
 target_link_libraries(od_without_clustering ${catkin_LIBRARIES})
