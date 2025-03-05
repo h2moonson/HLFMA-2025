@@ -9,5 +9,5 @@
   <!-- <arg name="param_file_name" doc="name of param file, e.g. rover" default="m"/>
   <node pkg="erp_drive" type="control" name="control" output="screen" args="$(arg target)"/> -->
   
-	<!-- <node pkg="rviz" type="rviz" name="rviz" args="-d $(find lidar_object_detection)/rviz/object_detection.rviz"/> -->
+	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find lidar_object_detection)/rviz/grid_map.rviz"/>
 </launch>

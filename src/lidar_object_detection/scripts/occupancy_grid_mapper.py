@@ -38,15 +38,15 @@ class OccupancyGridMapper:
             for j in range(width):
                 if grid[i, j] == 100:
                     if j < threshold:
-                        # x 좌표가 2/3 미만이면 모든 방향 동일한 padding_cells 적용
+                        # x 좌표가 3/4 미만이면 모든 방향 동일한 padding_cells 적용
                         i_min = max(0, i - padding_cells)
                         i_max = min(height, i + padding_cells + 1)
                         j_min = max(0, j - padding_cells)
                         j_max = min(width, j + padding_cells + 1)
                     else:
-                        # x 좌표가 2/3 이상이면 수직 방향(i) padding을 2배로 적용
-                        i_min = max(0, i - 2 * padding_cells)
-                        i_max = min(height, i + 2 * padding_cells + 1)
+                        # x 좌표가 3/4 이상이면 수직 방향(i) padding을 4배로 적용
+                        i_min = max(0, i - 4 * padding_cells)
+                        i_max = min(height, i + 4 * padding_cells + 1)
                         j_min = max(0, j - padding_cells)
                         j_max = min(width, j + padding_cells + 1)
                     

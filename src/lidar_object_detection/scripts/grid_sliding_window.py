@@ -18,10 +18,10 @@ class GridSlidingWindow:
         self.origin_x = 0.0  # OccupancyGrid의 원점 x
         self.origin_y = 0.0  # OccupancyGrid의 원점 y
 
-        self.window_width = 15
-        self.window_height = 8
+        self.window_width = 16
+        self.window_height = 6
         self.min_pixel_threshold = 1
-        self.max_empty_windows = 5
+        self.max_empty_windows = 6
         
         self.local_path_pub = rospy.Publisher("local_path", Path, queue_size=1)
         rospy.Subscriber("occupancy_grid", OccupancyGrid, self.occupancy_grid_callback)

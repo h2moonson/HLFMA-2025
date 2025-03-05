@@ -40,7 +40,6 @@ generate_messages(
 
 
 generate_dynamic_reconfigure_options(
-  cfg/config_acc.cfg
   cfg/config_without_clustering.cfg
 )
 
