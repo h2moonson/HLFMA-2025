@@ -51,8 +51,8 @@ class GridSlidingWindow:
         right_orig = np.array([self.convert_processed_to_original(pt) for pt in self.right_lane_points])
         # print("img coord", self.left_lane_points, ">>>")
         # print("grid_map_coord", left_orig,">>>")
-        print("img coord", self.right_lane_points, ">>>")
-        print("grid_map_coord", right_orig,">>>")
+        # print("img coord", self.right_lane_points, ">>>")
+        # print("grid_map_coord", right_orig,">>>")
         # 원래 좌표계에서 x 좌표 기준 정렬 (낮은 값부터)
         left_orig = left_orig[left_orig[:, 0].argsort()]
         # print(left_orig)
