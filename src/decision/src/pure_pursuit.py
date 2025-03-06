@@ -36,10 +36,6 @@ class PurePursuit:
         ########################  lattice  ########################
         ########################  lattice  ########################
 
-        # Subscriber
-        rospy.Subscriber("/Ego_topic", EgoVehicleStatus, self.egoStatusCB) ## PID테스트 위해서 모라이에서 속도 받아오기  
-        rospy.Subscriber("/gps", GPSMessage, self.gpsCB) ## Vehicle Status Subscriber 
-        rospy.Subscriber("/local_path", Path, self.localpathCB)
 
         self.status_msg = EgoStatus()
         self.ctrl_cmd_msg = CtrlCmd()
@@ -62,56 +58,70 @@ class PurePursuit:
         ### Param - Longitudinal Controller ###
         self.accel_msg = 0.0
         self.brake_msg = 0.0
-        self.pid_control_input = 0.0
-        self.steering_offset = 0.015
 
         self.max_velocity = 10.0
     
         self.euler_data = [0,0,0,0]
         self.quaternion_data = [0,0,0,0]
-        print("here?")
+        # print("here?")
         ### Param - tf ### 
         self.proj_UTM = Proj(proj='utm', zone = 52, elips='WGS84', preserve_units=False)
         self.tf_broadcaster = tf.TransformBroadcaster()
 
-        # print("wait for service")
+        # # print("wait for service")
         # ######################################## For Service ########################################
         # rospy.wait_for_service('/Service_MoraiEventCmd')
         # self.req_service = rospy.ServiceProxy('/Service_MoraiEventCmd', MoraiEventCmdSrv)
         # self.req = EventInfo()
         # #############################################################################################
-        # print("i think it's here")
+        # # print("i think it's here")
         ### Class ###
         self.local_path = Path()
         # path_reader = pathReader('path_maker') ## 경로 파일의 위치
         self.pure_pursuit = purePursuit() ## purePursuit import
         pid = pidController()
 
+        # Subscriber
+        rospy.Subscriber("/Ego_topic", EgoVehicleStatus, self.egoStatusCB) ## PID테스트 위해서 모라이에서 속도 받아오기  
+        rospy.Subscriber("/gps", GPSMessage, self.gpsCB) ## Vehicle Status Subscriber 
+        rospy.Subscriber("/local_path", Path, self.localpathCB)
+        self.pid_control_input = 0.0
+        self.steering_offset = 0.015
+
+
+        self.current_velocity = 0
+        
         # ### Read path ###
         # self.global_path = path_reader.read_txt(self.path_name+".txt") ## 출력할 경로의 이름
 
         rate = rospy.Rate(40) 
-        print("hello??")
+        # print("hello??")
         while not rospy.is_shutdown():
-            print("hello?")
+            # # print("hello?")
             self.getEgoCoord()
             if self.is_gps_status == True : 
                 self.ctrl_cmd_msg.longlCmdType = 1
-                print("im in while 1")
+                # print("im in while 1")
                 self.pure_pursuit.getPath(self.local_path) #일단 local_path로만 주행 테스트 
-                print("im in while 2")
+                # print("im in while 2")
 
                 self.pure_pursuit.getEgoStatus(self.status_msg) # utils에서 계산하도록 속도, 위치 넘겨줌
                 # @TODO getEgoStatus에 임시로 local path테스트만 하기에 0,0 으로 함수 내부에서 설정해둠 > 추후 수정
                 
-                self.steering, self.target_x, self.target_y, self.lfd = self.pure_pursuit.steeringAngle()
-                self.corner_theta_degree, self.curvature_target_x, self.curvature_target_y = self.pure_pursuit.estimateCurvature()
+                self.steering, self.target_x, self.target_y, self.lfd = self.pure_pursuit.steeringAngle(3.0)
+                estimate_curvature = self.pure_pursuit.estimateCurvature()
+                if not estimate_curvature:
+                    rospy.loginfo('i dont have path') 
+                    continue
+
+                self.corner_theta_degree, self.curvature_target_x, self.curvature_target_y = estimate_curvature
                 self.target_velocity = self.cornerController(self.corner_theta_degree)
                 self.pid_control_input = pid.pid(self.target_velocity, self.current_velocity) ## 속도 제어를 위한 PID 적용 (target Velocity, Status Velocity)
                 
                 if self.pid_control_input > 0 :
                     self.accel_msg= self.pid_control_input
                     self.brake_msg = 0
+
                 else :
                     self.accel_msg = 0
                     self.brake_msg = -self.pid_control_input
@@ -127,7 +137,7 @@ class PurePursuit:
 
     def getEgoCoord(self): ## Vehicle Status Subscriber 
         if self.is_gps == True:
-            print("im getEgoCoord")
+            # print("im getEgoCoord")
             self.status_msg.position.x = self.xy_zone[0] - 313008.55819800857
             self.status_msg.position.y = self.xy_zone[1] - 4161698.628368007
             self.status_msg.position.z = 0.0
@@ -151,15 +161,16 @@ class PurePursuit:
             self.is_gps_status=False
 
     def localpathCB(self, msg): 
-        print("i'm localpathCB")
+        # print("i'm localpathCB")
         self.local_path = msg
 
-    def gpsCB(self, msg : GPSMessage):
+    def gpsCB(self, msg: GPSMessage):
         print("i'm gpsCB")
+
         if msg.status == 0: 
             # GPS 상태 불량
             self.is_gps = False
-            print("gps 상태불량")
+            # print("gps 상태불량")
 
         else:
             new_xy = self.proj_UTM(msg.longitude, msg.latitude)
@@ -192,7 +203,7 @@ class PurePursuit:
                             "base_link")
             
             self.is_gps = True
-            print("is gps true 로 변환")
+            # print("is gps true 로 변환")
 
     def publishCtrlCmd(self, accel_msg, steering_msg, brake_msg):
         self.ctrl_cmd_msg.accel = accel_msg
@@ -220,11 +231,13 @@ class PurePursuit:
         self.publishCtrlCmd(self.accel_msg, self.steering_msg, self.brake_msg)
 
     def egoStatusCB(self, msg): 
-        print("i'm egoStatusCB")
+        # print("i'm egoStatusCB")
         self.current_velocity = msg.velocity.x * 3.6
         if self.current_velocity < 0 :
             self.current_velocity = 0
+
         self.current_wheel_angle = msg.wheel_angle
+        
 
     def visualizeTargetPoint(self):
         pure_pursuit_target_point = Marker()
