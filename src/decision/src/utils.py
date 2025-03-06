@@ -66,7 +66,8 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
         self.forward_point = Point()
         self.current_position = Point()
         self.is_look_forward_point = False
-        self.vehicle_length = 4.635 # 4.6 # 3.0
+        # self.vehicle_length = 4.635 # 4.6 # 3.0
+        self.vehicle_length = 1.04 # 4.6 # 3.0
 
         self.lfd = 2
         self.min_lfd = 1.0
@@ -105,6 +106,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
     # 타겟 지점 설정하기
     def steeringAngle(self, _static_lfd = 1.0):  ## purePursuit 알고리즘을 이용한 Steering 계산 ## 
         vehicle_position = self.current_position
+
         rotated_point = Point()
         self.is_look_forward_point = False
 
@@ -115,6 +117,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
             path_point = i.pose.position
             dx = path_point.x - vehicle_position.x
             dy = path_point.y - vehicle_position.y
+
             rotated_point.x = cos(self.vehicle_yaw) * dx + sin(self.vehicle_yaw) * dy
             rotated_point.y = sin(self.vehicle_yaw) * dx - cos(self.vehicle_yaw) * dy
 
@@ -124,13 +127,15 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
                 if static_lfd > 0:
                     self.lfd = static_lfd
                 
-                if dis >= self.lfd :
-                    # print("VEL:", self.current_vel)
-                    self.lfd = self.current_vel * 0.2 # sangam
-                    if self.lfd < self.min_lfd : 
+                if dis >= self.lfd:
+                    rospy.loginfo(f'dis: {dis} | self.lfd: {self.lfd}')
+                    # self.lfd = self.current_vel * 0.2 # sangam
+                    self.lfd = self.current_vel * 0.8 # 0306 Morai
+
+                    if self.lfd < self.min_lfd: 
                         self.lfd = self.min_lfd 
 
-                    elif self.lfd > self.max_lfd :
+                    elif self.lfd > self.max_lfd:
                         self.lfd = self.max_lfd
 
                     self.forward_point = path_point
@@ -139,7 +144,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
         
         theta = atan2(rotated_point.y, rotated_point.x)
 
-        if self.is_look_forward_point :
+        if self.is_look_forward_point:
             self.steering = atan2((2 * self.vehicle_length * sin(theta)), self.lfd) * RAD2DEG * -1 #deg
             return self.steering, self.forward_point.x, self.forward_point.y, self.lfd ## Steering 반환 ##
         
