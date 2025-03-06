@@ -13,16 +13,15 @@ from pyproj import Proj, transform
 from morai_msgs.msg import GPSMessage, CtrlCmd, EventInfo, EgoVehicleStatus
 from morai_msgs.srv import MoraiEventCmdSrv
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from utils import purePursuit, pidController
+from utils import PurePursuit, PidController
 
 class EgoStatus:
     def __init__(self):
-        self.position = Vector3()
         self.heading = 0.0
+        self.position = Vector3()
         self.velocity = Vector3()
 
-
-class PurePursuit:
+class PurePursuitNode:
     def __init__(self):
         rospy.init_node('pure_pursuit', anonymous=True)
 
@@ -35,7 +34,6 @@ class PurePursuit:
 
         ########################  lattice  ########################
         ########################  lattice  ########################
-
 
         self.status_msg = EgoStatus()
         self.ctrl_cmd_msg = CtrlCmd()
@@ -55,6 +53,7 @@ class PurePursuit:
 
         self.target_velocity = 5.0
         self.steering = 0.0
+
         ### Param - Longitudinal Controller ###
         self.accel_msg = 0.0
         self.brake_msg = 0.0
@@ -63,7 +62,7 @@ class PurePursuit:
     
         self.euler_data = [0,0,0,0]
         self.quaternion_data = [0,0,0,0]
-        # print("here?")
+
         ### Param - tf ### 
         self.proj_UTM = Proj(proj='utm', zone = 52, elips='WGS84', preserve_units=False)
         self.tf_broadcaster = tf.TransformBroadcaster()
@@ -78,8 +77,8 @@ class PurePursuit:
         ### Class ###
         self.local_path = Path()
         # path_reader = pathReader('path_maker') ## 경로 파일의 위치
-        self.pure_pursuit = purePursuit() ## purePursuit import
-        pid = pidController()
+        self.pure_pursuit = PurePursuit() ## purePursuit import
+        pid = PidController()
 
         # Subscriber
         rospy.Subscriber("/Ego_topic", EgoVehicleStatus, self.egoStatusCB) ## PID테스트 위해서 모라이에서 속도 받아오기  
@@ -99,6 +98,7 @@ class PurePursuit:
         while not rospy.is_shutdown():
             # # print("hello?")
             self.getEgoCoord()
+            
             if self.is_gps_status == True : 
                 self.ctrl_cmd_msg.longlCmdType = 1
                 # print("im in while 1")
@@ -110,6 +110,7 @@ class PurePursuit:
                 
                 self.steering, self.target_x, self.target_y, self.lfd = self.pure_pursuit.steeringAngle(3.0)
                 estimate_curvature = self.pure_pursuit.estimateCurvature()
+
                 if not estimate_curvature:
                     rospy.loginfo('i dont have path') 
                     continue
@@ -161,12 +162,9 @@ class PurePursuit:
             self.is_gps_status=False
 
     def localpathCB(self, msg): 
-        # print("i'm localpathCB")
         self.local_path = msg
 
     def gpsCB(self, msg: GPSMessage):
-        print("i'm gpsCB")
-
         if msg.status == 0: 
             # GPS 상태 불량
             self.is_gps = False
@@ -203,8 +201,7 @@ class PurePursuit:
                             "base_link")
             
             self.is_gps = True
-            # print("is gps true 로 변환")
-
+            
     def publishCtrlCmd(self, accel_msg, steering_msg, brake_msg):
         self.ctrl_cmd_msg.accel = accel_msg
         self.ctrl_cmd_msg.steering = steering_msg
@@ -212,9 +209,7 @@ class PurePursuit:
         self.ctrl_cmd_pub.publish(self.ctrl_cmd_msg)
 
     def cornerController(self, corner_theta_degree):
-        if corner_theta_degree > 50:
-            corner_theta_degree = 50
-
+        corner_theta_degree = min(corner_theta_degree, 50)
         target_velocity = -0.3 * corner_theta_degree + 20
 
         if target_velocity < 0:
@@ -231,27 +226,27 @@ class PurePursuit:
         self.publishCtrlCmd(self.accel_msg, self.steering_msg, self.brake_msg)
 
     def egoStatusCB(self, msg): 
-        # print("i'm egoStatusCB")
-        self.current_velocity = msg.velocity.x * 3.6
-        if self.current_velocity < 0 :
-            self.current_velocity = 0
-
+        self.current_velocity = max(0, msg.velocity.x * 3.6)
         self.current_wheel_angle = msg.wheel_angle
-        
 
     def visualizeTargetPoint(self):
         pure_pursuit_target_point = Marker()
+        
         pure_pursuit_target_point.header.frame_id = "map"
-        pure_pursuit_target_point.type = pure_pursuit_target_point.SPHERE
         pure_pursuit_target_point.action = pure_pursuit_target_point.ADD
+        pure_pursuit_target_point.type = pure_pursuit_target_point.SPHERE
+        
         pure_pursuit_target_point.scale.x = 1.0
         pure_pursuit_target_point.scale.y = 1.0
         pure_pursuit_target_point.scale.z = 1.0
+        
         pure_pursuit_target_point.pose.orientation.w = 1.0
+        
         pure_pursuit_target_point.color.r = 1.0
         pure_pursuit_target_point.color.g = 0.0
         pure_pursuit_target_point.color.b = 0.0
         pure_pursuit_target_point.color.a = 1.0 
+        
         pure_pursuit_target_point.pose.position.x = self.target_x
         pure_pursuit_target_point.pose.position.y = self.target_y
         pure_pursuit_target_point.pose.position.z = 0.0
@@ -260,6 +255,7 @@ class PurePursuit:
 
 if __name__ == '__main__':
     try:
-        pure_pursuit_= PurePursuit()
+        pure_pursuit_= PurePursuitNode()
+
     except rospy.ROSInterruptException:
         pass
