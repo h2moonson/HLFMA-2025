@@ -85,8 +85,8 @@ class PurePursuitNode:
         rospy.Subscriber("/gps", GPSMessage, self.gpsCB) ## Vehicle Status Subscriber 
         rospy.Subscriber("/local_path", Path, self.localpathCB)
         self.pid_control_input = 0.0
-        self.steering_offset = 0.015
-
+        # self.steering_offset = 0.015
+        self.steering_offset = 0.03
 
         self.current_velocity = 0
         
@@ -106,9 +106,9 @@ class PurePursuitNode:
                 # print("im in while 2")
 
                 self.pure_pursuit.getEgoStatus(self.status_msg) # utils에서 계산하도록 속도, 위치 넘겨줌
-                # @TODO getEgoStatus에 임시로 local path테스트만 하기에 0,0 으로 함수 내부에서 설정해둠 > 추후 수정
+                # @TODO getEgoStatus에 임시로 local path테스트만 하기에 0, 0 으로 함수 내부에서 설정해둠 > 추후 수정
                 
-                self.steering, self.target_x, self.target_y, self.lfd = self.pure_pursuit.steeringAngle(3.0)
+                self.steering, self.target_x, self.target_y, self.lfd = self.pure_pursuit.steeringAngle(1.5)
                 estimate_curvature = self.pure_pursuit.estimateCurvature()
 
                 if not estimate_curvature:
@@ -209,8 +209,9 @@ class PurePursuitNode:
         self.ctrl_cmd_pub.publish(self.ctrl_cmd_msg)
 
     def cornerController(self, corner_theta_degree):
-        corner_theta_degree = min(corner_theta_degree, 50)
-        target_velocity = -0.3 * corner_theta_degree + 20
+        corner_theta_degree = min(corner_theta_degree, 30)
+
+        target_velocity = -0.4 * corner_theta_degree + 20
 
         if target_velocity < 0:
             target_velocity = 5
