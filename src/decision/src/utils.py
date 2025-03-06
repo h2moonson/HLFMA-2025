@@ -99,20 +99,20 @@ class purePursuit : ## purePursuit 알고리즘 적용 ##
         return current_waypoint 
 
     # 타겟 지점 설정하기
-    def steeringAngle(self, static_lfd=0):  ## purePursuit 알고리즘을 이용한 Steering 계산 ## 
+    def steeringAngle(self, _static_lfd=1.0):  ## purePursuit 알고리즘을 이용한 Steering 계산 ## 
         vehicle_position=self.current_position
         rotated_point=Point()
         self.is_look_forward_point= False
 
-        static_lfd = 1.0
+        static_lfd = _static_lfd
         rotated_x_threshold = 0.0
         
         for i in self.path.poses: # self.path == local_path 
             path_point=i.pose.position
             dx = path_point.x - vehicle_position.x
             dy = path_point.y - vehicle_position.y
-            rotated_point.x=cos(self.vehicle_yaw)*dx + sin(self.vehicle_yaw)*dy
-            rotated_point.y=sin(self.vehicle_yaw)*dx - cos(self.vehicle_yaw)*dy
+            rotated_point.x = cos(self.vehicle_yaw) * dx + sin(self.vehicle_yaw) * dy
+            rotated_point.y = sin(self.vehicle_yaw) * dx - cos(self.vehicle_yaw) * dy
 
             if rotated_point.x > rotated_x_threshold :
                 dis=sqrt(pow(rotated_point.x,2)+pow(rotated_point.y,2))
@@ -145,9 +145,13 @@ class purePursuit : ## purePursuit 알고리즘 적용 ##
         
         
     def estimateCurvature(self):
+        if len(self.path.poses) == 0:
+            return None
+
         vehicle_position = self.current_position
         try:
             last_path_point = self.path.poses[-24].pose.position
+        
         except:
             last_path_point = self.path.poses[-1].pose.position
 
