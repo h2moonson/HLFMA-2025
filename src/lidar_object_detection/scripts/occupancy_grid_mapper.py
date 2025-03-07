@@ -41,13 +41,13 @@ class OccupancyGridMapper:
                         # x 좌표가 3/4 미만이면 모든 방향 동일한 padding_cells 적용
                         i_min = max(0, i - padding_cells)
                         i_max = min(height, i + padding_cells + 1)
-                        j_min = max(0, j - padding_cells)
-                        j_max = min(width, j + padding_cells + 1)
+                        j_min = max(0, j)
+                        j_max = min(width, j  + padding_cells * 3 + 1) # 바라보는 방향은 굳이 padding해야돼?
                     else:
                         # x 좌표가 3/4 이상이면 수직 방향(i) padding을 4배로 적용
                         i_min = max(0, i - 4 * padding_cells)
                         i_max = min(height, i + 4 * padding_cells + 1)
-                        j_min = max(0, j - padding_cells)
+                        j_min = max(0, j )
                         j_max = min(width, j + padding_cells + 1)
                     
                     padded_grid[i_min:i_max, j_min:j_max] = 100
