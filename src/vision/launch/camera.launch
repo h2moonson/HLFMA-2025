@@ -1,13 +1,13 @@
 <launch>
     <!-- 센서를 통한 데이터 직접 수집 -->
-    <node pkg="usb_cam" type="usb_cam_node" name="usb_cam" output="screen">
+    <!-- <node pkg="usb_cam" type="usb_cam_node" name="usb_cam" output="screen">
         <param name="video_device" value="/dev/video0"/>
         <param name="image_width" value="640"/>
         <param name="image_height" value="480"/>
         <param name="pixel_format" value="yuyv"/>
         <param name="camera_frame_id" value="usb_cam"/>
-    </node>
+    </node> -->
 
     <!-- 파일을 통한 데이터 간접 수집 -->
-    <!-- <node pkg="vision" type="test_cam_node.py" name="test_cam_node" output="screen" /> -->
+    <node pkg="vision" type="test_cam_node.py" name="test_cam_node" output="screen" />
 </launch>

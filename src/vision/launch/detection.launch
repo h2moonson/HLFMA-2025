@@ -1,6 +1,7 @@
 <launch>
     <include file="$(find vision)/launch/camera.launch"/>
     <node pkg="vision" type="yolop_node" name="yolop_node" output="screen"/>
+    <node pkg="vision" type="morai_cam_node.py" name="morai_cam_node" output="screen"/>
     
     <!-- <node pkg="vision" type="detection_node.py" name="detection_node" output="screen">
         <param name="weights" value="/home/foscar/ieve_2025/src/vision/src/YOLOP/weights/End-to-end.pth" />
