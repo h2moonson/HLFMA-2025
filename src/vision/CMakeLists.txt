@@ -18,12 +18,17 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   roslib
   image_transport
+  dynamic_reconfigure
+)
+
+generate_dynamic_reconfigure_options(
+  cfg/cam_param.cfg
 )
 
 catkin_package(
   # INCLUDE_DIRS include
   # LIBRARIES vision
-  CATKIN_DEPENDS roscpp rospy cv_bridge roslib image_transport
+  CATKIN_DEPENDS roscpp rospy cv_bridge roslib image_transport dynamic_reconfigure
   # DEPENDS system_lib
 )
 
