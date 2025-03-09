@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
-    <!-- <include file="$(find velodyne_pointcloud)/launch/VLP16_points.launch"/> -->
+    <include file="$(find velodyne_pointcloud)/launch/VLP16_points.launch"/>
 	<node pkg="lidar_object_detection" type="od_without_clustering" name="od_without_clustering"/>
-	<node pkg="lidar_object_detection" type="occupancy_grid_mapper.py" name="occupancy_grid_mapper" output="screen"/>
+	<node pkg="lidar_object_detection" type="occupancy_grid_mapper2.py" name="occupancy_grid_mapper" output="screen"/>
 	<!-- <node pkg="lidar_object_detection" type="lattice_basic.py" name="lattice_basic" output="screen"/> -->
 	<node pkg="lidar_object_detection" type="grid_sliding_window.py" name="grid_sliding_window" output="screen"/>
 	

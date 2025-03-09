@@ -70,5 +70,6 @@ catkin_install_python(PROGRAMS
     scripts/lattice_basic.py
     scripts/grid_sliding_window.py
     scripts/occupancy_grid_mapper.py
+    scripts/occupancy_grid_mapper2.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
