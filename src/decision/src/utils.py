@@ -131,7 +131,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
                 if dis >= self.lfd:
                     # rospy.loginfo(f'dis: {dis} | self.lfd: {self.lfd}')
                     # self.lfd = self.current_vel * 0.2 # sangam
-                    self.lfd = self.current_vel * 0.8 # 0306 Morai
+                    self.lfd = self.current_vel * 0.9 # 0309 Morai
 
                     if self.lfd < self.min_lfd: 
                         self.lfd = self.min_lfd 
@@ -158,7 +158,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
 
         vehicle_position = self.current_position
         try:
-            last_path_point = self.path.poses[-24].pose.position
+            last_path_point = self.path.poses[-12].pose.position
         
         except:
             last_path_point = self.path.poses[-1].pose.position
@@ -179,7 +179,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
 
 class PidController : ## 속도 제어를 위한 PID 적용 ##
     def __init__(self):
-        self.p_gain = 0.09
+        self.p_gain = 0.7
         self.i_gain = 0.0        
         self.d_gain = 0.05
         self.controlTime = 0.025 
@@ -195,5 +195,6 @@ class PidController : ## 속도 제어를 위한 PID 적용 ##
 
         output = p_control + self.i_control + d_control
         self.prev_error = error
-
+        if (output == 0):
+            print("pid is zero????")
         return output

@@ -33,8 +33,8 @@ class OccupancyGridMapper:
             for x in range(width):
                 if grid[y, x] == 100:
                     if x < threshold:
-                        y_min = max(0, y - padding_cells)
-                        y_max = min(height, y + padding_cells + 1)
+                        y_min = max(0, y - 2 * padding_cells)
+                        y_max = min(height, y + 2 * padding_cells + 1)
                         x_min = max(0, x)
                         x_max = min(width, x + padding_cells * 3 + 1)
                     else:

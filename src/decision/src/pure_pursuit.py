@@ -29,7 +29,7 @@ class PurePursuitNode:
         self.ego_marker_pub                 = rospy.Publisher('/ego_marker', Marker, queue_size=1)
         self.ctrl_cmd_pub                   = rospy.Publisher('/ctrl_cmd', CtrlCmd, queue_size=1)
         self.current_waypoint_pub           = rospy.Publisher('/current_waypoint', Int64, queue_size=1)
-        self.pure_pursuit_target_point_pub  = rospy.Publisher('/pure_pusuit_target_point', Marker, queue_size=1)
+        self.pure_pursuit_target_point_pub  = rospy.Publisher('/pure_pursuit_target_point', Marker, queue_size=1)
         self.curvature_target_point_pub     = rospy.Publisher('/curvature_target_point', Marker, queue_size=1)
 
         ########################  lattice  ########################
@@ -58,7 +58,8 @@ class PurePursuitNode:
         self.accel_msg = 0.0
         self.brake_msg = 0.0
 
-        self.max_velocity = 8.0
+        self.max_velocity = 5.0
+        self.min_velocity = 2.0
     
         self.euler_data = [0,0,0,0]
         self.quaternion_data = [0,0,0,0]
@@ -89,8 +90,8 @@ class PurePursuitNode:
         self.current_velocity = 0
         
         # ### Read path ###
-        self.cw_path = path_reader.read_txt("clockwise.txt") ## 출력할 경로의 이름
-        self.ccw_path = path_reader.read_txt("counter_clockwise.txt") ## 출력할 경로의 이름
+        # self.cw_path = path_reader.read_txt("clockwise.txt") ## 출력할 경로의 이름
+        # self.ccw_path = path_reader.read_txt("counter_clockwise.txt") ## 출력할 경로의 이름
         
         rate = rospy.Rate(40) 
         
@@ -99,9 +100,7 @@ class PurePursuitNode:
             
             if self.is_gps_status == True : 
                 self.ctrl_cmd_msg.longlCmdType = 1
-                # print("im in while 1")
                 self.pure_pursuit.getPath(self.local_path) #일단 local_path로만 주행 테스트 
-                # print("im in while 2")
 
                 self.pure_pursuit.getEgoStatus(self.status_msg) # utils에서 계산하도록 속도, 위치 넘겨줌
                 # @TODO getEgoStatus에 임시로 local path테스트만 하기에 0, 0 으로 함수 내부에서 설정해둠 > 추후 수정
@@ -129,6 +128,7 @@ class PurePursuitNode:
 
                 self.current_waypoint_pub.publish(self.current_waypoint)
 
+                self.visualizeEgoPoint()
                 self.visualizeTargetPoint()
                 self.publishCtrlCmd(self.accel_msg, self.steering_msg, self.brake_msg)
 
@@ -136,7 +136,6 @@ class PurePursuitNode:
 
     def getEgoCoord(self): ## Vehicle Status Subscriber 
         if self.is_gps == True:
-            # print("im getEgoCoord")
             self.status_msg.position.x = self.xy_zone[0] - 313008.55819800857
             self.status_msg.position.y = self.xy_zone[1] - 4161698.628368007
             self.status_msg.position.z = 0.0
@@ -166,7 +165,6 @@ class PurePursuitNode:
         if msg.status == 0: 
             # GPS 상태 불량
             self.is_gps = False
-            # print("gps 상태불량")
 
         else:
             new_xy = self.proj_UTM(msg.longitude, msg.latitude)
@@ -209,11 +207,14 @@ class PurePursuitNode:
     def cornerController(self, corner_theta_degree):
         corner_theta_degree = min(corner_theta_degree, 30)
 
-        target_velocity = -0.6 * corner_theta_degree + 15
+        target_velocity = -0.5 * corner_theta_degree + 10
 
-        if target_velocity < 0:
-            target_velocity = 4
+        if target_velocity < self.min_velocity:
+            target_velocity = self.min_velocity
         
+        if target_velocity > self.max_velocity : 
+            target_velocity = self.max_velocity
+
         return target_velocity
     
     def brake(self) :
@@ -235,9 +236,9 @@ class PurePursuitNode:
         pure_pursuit_target_point.action = pure_pursuit_target_point.ADD
         pure_pursuit_target_point.type = pure_pursuit_target_point.SPHERE
         
-        pure_pursuit_target_point.scale.x = 1.0
-        pure_pursuit_target_point.scale.y = 1.0
-        pure_pursuit_target_point.scale.z = 1.0
+        pure_pursuit_target_point.scale.x = 0.5
+        pure_pursuit_target_point.scale.y = 0.5
+        pure_pursuit_target_point.scale.z = 0.5
         
         pure_pursuit_target_point.pose.orientation.w = 1.0
         
@@ -251,6 +252,30 @@ class PurePursuitNode:
         pure_pursuit_target_point.pose.position.z = 0.0
         
         self.pure_pursuit_target_point_pub.publish(pure_pursuit_target_point)
+
+    def visualizeEgoPoint(self):
+        ego_point = Marker()
+        
+        ego_point.header.frame_id = "map"
+        ego_point.action = ego_point.ADD
+        ego_point.type = ego_point.SPHERE
+        
+        ego_point.scale.x = 0.5
+        ego_point.scale.y = 0.5
+        ego_point.scale.z = 0.5
+        
+        ego_point.pose.orientation.w = 1.0
+        
+        ego_point.color.r = 0.0
+        ego_point.color.g = 0.0
+        ego_point.color.b = 1.0
+        ego_point.color.a = 1.0 
+        
+        ego_point.pose.position.x = self.current_waypoint[0]
+        ego_point.pose.position.y = self.current_waypoint[1]
+        ego_point.pose.position.z = 0.0
+        
+        self.ego_marker_pub.publish(ego_point)
 
 if __name__ == '__main__':
     try:

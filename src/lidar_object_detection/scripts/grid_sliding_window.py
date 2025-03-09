@@ -18,9 +18,9 @@ class GridSlidingWindow:
         self.origin_x = 0.0  # OccupancyGrid의 원점 x
         self.origin_y = 0.0  # OccupancyGrid의 원점 y
 
-        self.window_width = 20  # 이전에는 16이었음
+        self.window_width = 22 # 이전에는 16이었음
         self.window_height = 6
-        self.min_pixel_threshold = 5  # 이전에는 1이었음
+        self.min_pixel_threshold = 1  # 이전에는 1이었음
         self.max_empty_windows = 4
 
         self.local_path_pub = rospy.Publisher("local_path", Path, queue_size=1)
@@ -66,7 +66,7 @@ class GridSlidingWindow:
                 # 만약 left_count가 0이면 직선(오른쪽만 존재)으로 가정
                 if last_right_point == None or last_right_point[0] > invasion_threshold:
                     lane_points = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
-                    print("직선가정 > shift (왼쪽 없음)")
+                    print("shift (왼쪽 없음)") 
                     lane_side = 'right'
                 else:
                     # left_count가 0이 아니면, 급격한 좌회전 상황으로 판단
@@ -84,7 +84,7 @@ class GridSlidingWindow:
             elif len(smoothed_right) == 0:
                 if last_left_point == None or last_left_point[0] < invasion_threshold:
                     lane_points = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
-                    print("직선가정 > shift (오른쪽 없음)")
+                    print("shift (오른쪽 없음)")
                     lane_side = 'left'
                 else:
                     print("급격한 우회전")
