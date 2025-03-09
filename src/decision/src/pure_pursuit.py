@@ -13,7 +13,7 @@ from pyproj import Proj, transform
 from morai_msgs.msg import GPSMessage, CtrlCmd, EventInfo, EgoVehicleStatus
 from morai_msgs.srv import MoraiEventCmdSrv
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from utils import PurePursuit, PidController
+from utils import PurePursuit, PidController, PathReader
 
 class EgoStatus:
     def __init__(self):
@@ -58,7 +58,7 @@ class PurePursuitNode:
         self.accel_msg = 0.0
         self.brake_msg = 0.0
 
-        self.max_velocity = 10.0
+        self.max_velocity = 8.0
     
         self.euler_data = [0,0,0,0]
         self.quaternion_data = [0,0,0,0]
@@ -67,16 +67,15 @@ class PurePursuitNode:
         self.proj_UTM = Proj(proj='utm', zone = 52, elips='WGS84', preserve_units=False)
         self.tf_broadcaster = tf.TransformBroadcaster()
 
-        # # print("wait for service")
         # ######################################## For Service ########################################
         # rospy.wait_for_service('/Service_MoraiEventCmd')
         # self.req_service = rospy.ServiceProxy('/Service_MoraiEventCmd', MoraiEventCmdSrv)
         # self.req = EventInfo()
         # #############################################################################################
-        # # print("i think it's here")
+        
         ### Class ###
         self.local_path = Path()
-        # path_reader = pathReader('path_maker') ## 경로 파일의 위치
+        path_reader = PathReader('decision') ## 경로 파일의 위치
         self.pure_pursuit = PurePursuit() ## purePursuit import
         pid = PidController()
 
@@ -85,18 +84,17 @@ class PurePursuitNode:
         rospy.Subscriber("/gps", GPSMessage, self.gpsCB) ## Vehicle Status Subscriber 
         rospy.Subscriber("/local_path", Path, self.localpathCB)
         self.pid_control_input = 0.0
-        # self.steering_offset = 0.015
         self.steering_offset = 0.03
 
         self.current_velocity = 0
         
         # ### Read path ###
-        # self.global_path = path_reader.read_txt(self.path_name+".txt") ## 출력할 경로의 이름
-
+        self.cw_path = path_reader.read_txt("clockwise.txt") ## 출력할 경로의 이름
+        self.ccw_path = path_reader.read_txt("counter_clockwise.txt") ## 출력할 경로의 이름
+        
         rate = rospy.Rate(40) 
-        # print("hello??")
+        
         while not rospy.is_shutdown():
-            # # print("hello?")
             self.getEgoCoord()
             
             if self.is_gps_status == True : 
@@ -211,10 +209,10 @@ class PurePursuitNode:
     def cornerController(self, corner_theta_degree):
         corner_theta_degree = min(corner_theta_degree, 30)
 
-        target_velocity = -0.4 * corner_theta_degree + 20
+        target_velocity = -0.6 * corner_theta_degree + 15
 
         if target_velocity < 0:
-            target_velocity = 5
+            target_velocity = 4
         
         return target_velocity
     

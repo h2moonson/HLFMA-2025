@@ -12,61 +12,170 @@ class GridSlidingWindow:
     def __init__(self):
         self.occ_grid = None
         self.occ_grid_img = None
-        self.img_height = None  # 원본 occupancy grid의 height
-        self.img_width = None   # 원본 occupancy grid의 width
+        self.occ_grid_height = None  # 원본 occupancy grid의 height (100)
+        self.occ_grid_width = None   # 원본 occupancy grid의 width (70)
         self.occ_grid_resolution = None
         self.origin_x = 0.0  # OccupancyGrid의 원점 x
         self.origin_y = 0.0  # OccupancyGrid의 원점 y
 
-        self.window_width = 16
+        self.window_width = 20  # 이전에는 16이었음
         self.window_height = 6
-        self.min_pixel_threshold = 1
-        self.max_empty_windows = 6
-        
+        self.min_pixel_threshold = 5  # 이전에는 1이었음
+        self.max_empty_windows = 4
+
         self.local_path_pub = rospy.Publisher("local_path", Path, queue_size=1)
         rospy.Subscriber("occupancy_grid", OccupancyGrid, self.occupancy_grid_callback)
 
     def convert_processed_to_original(self, point):
         x_proc, y_proc = point
-        x_orig = self.img_width - 1 - y_proc
-        y_orig = self.img_height - 1 - x_proc
+        x_orig = self.occ_grid_width - 1 - y_proc
+        y_orig = self.occ_grid_height - 1 - x_proc
         return (x_orig, y_orig)
 
     def occupancy_grid_callback(self, msg):
         self.occ_grid = msg 
         self.occ_grid_resolution = msg.info.resolution
-        self.img_height = msg.info.height
-        self.img_width = msg.info.width
+        self.occ_grid_height = msg.info.height
+        self.occ_grid_width = msg.info.width
         self.origin_x = msg.info.origin.position.x
         self.origin_y = msg.info.origin.position.y
 
-        # 회전된 이미지 좌표계로 lane point 검출
-        self.occ_grid_img, self.left_lane_points, self.right_lane_points = self.process_occupancy_grid(self.occ_grid)
+        lane_side = ""
+        lane_points = None
+        right_orig = None
+        left_orig = None
+        forced_point = None
+        interpolated_path = Path()
+        invasion_threshold = self.occ_grid_height // 2 
+        
+        # 회전된 이미지 좌표계에서 lane point 검출
+        self.occ_grid_img, self.left_lane_points, self.right_lane_points, last_left_point, last_right_point = self.process_occupancy_grid(self.occ_grid)
 
-        if self.left_lane_points.shape[0] == 0 or self.right_lane_points.shape[0] == 0:
+        # smoothing 제거: 단순히 현재 프레임의 lane point 사용
+        smoothed_left = self.left_lane_points
+        smoothed_right = self.right_lane_points
+
+        # 두 lane 모두 없으면 그냥 리턴
+        if len(smoothed_left) == 0 and len(smoothed_right) == 0:
             return
-    
-        # 회전된 좌표계에서 검출된 포인트들을 원래 occupancy grid 좌표계 (grid index)로 변환
-        left_orig = np.array([self.convert_processed_to_original(pt) for pt in self.left_lane_points])
-        right_orig = np.array([self.convert_processed_to_original(pt) for pt in self.right_lane_points])
-        # print("img coord", self.left_lane_points, ">>>")
-        # print("grid_map_coord", left_orig,">>>")
-        # print("img coord", self.right_lane_points, ">>>")
-        # print("grid_map_coord", right_orig,">>>")
-        # 원래 좌표계에서 x 좌표 기준 정렬 (낮은 값부터)
-        left_orig = left_orig[left_orig[:, 0].argsort()]
-        # print(left_orig)
-        right_orig = right_orig[right_orig[:, 0].argsort()]
-        # print(left_orig[-1][0] , "left orig의 x좌표 맨 마지막")
 
-        # 원래 grid index 값을 기반으로 Path 생성 (origin 보정 및 해상도 적용)
-        raw_waypoints = []  # (x, y) 좌표 리스트
-        # 좌측과 우측 포인트를 동시에 순회
+        # XOR 조건 : 한쪽 영역만 valid 한 경우
+        if (len(smoothed_left) == 0) != (len(smoothed_right) == 0):
+            # 왼쪽 lane이 없을 때
+            if len(smoothed_left) == 0:
+                # 만약 left_count가 0이면 직선(오른쪽만 존재)으로 가정
+                if last_right_point == None or last_right_point[0] > invasion_threshold:
+                    lane_points = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
+                    print("직선가정 > shift (왼쪽 없음)")
+                    lane_side = 'right'
+                else:
+                    # left_count가 0이 아니면, 급격한 좌회전 상황으로 판단
+                    print("급격한 좌회전")
+                    forced_point = (self.occ_grid_height / 5, self.occ_grid_width - 1)
+                    forced_point = self.convert_processed_to_original(forced_point)
+
+                    right_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
+                    right_orig = right_orig[right_orig[:, 0].argsort()]
+
+                    left_orig = np.array([forced_point])
+                    lane_side = 'abnormal'
+
+            # 오른쪽 lane이 없을 때
+            elif len(smoothed_right) == 0:
+                if last_left_point == None or last_left_point[0] < invasion_threshold:
+                    lane_points = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
+                    print("직선가정 > shift (오른쪽 없음)")
+                    lane_side = 'left'
+                else:
+                    print("급격한 우회전")
+                    forced_point = (self.occ_grid_height * (4/5), self.occ_grid_width - 1)
+                    forced_point = self.convert_processed_to_original(forced_point)
+
+                    left_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
+                    left_orig = left_orig[left_orig[:, 0].argsort()]
+
+                    right_orig = np.array([forced_point])
+                    lane_side = 'abnormal'
+
+            # straight-line 경우: lane_points가 할당된 상태
+            if lane_side != 'abnormal':
+                # lane_points가 numpy array임을 보장
+                if not isinstance(lane_points, np.ndarray):
+                    lane_points = np.array(lane_points)
+                lane_points = lane_points[lane_points[:, 0].argsort()]
+                interpolated_path = self.make_shifted_path(lane_points, lane_side)
+            else:
+                interpolated_path = self.make_center_path(left_orig, right_orig)
+        else:
+            # 양쪽 lane point가 모두 존재하는 경우 기존 로직 사용
+            left_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
+            right_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
+            left_orig = left_orig[left_orig[:, 0].argsort()]
+            right_orig = right_orig[right_orig[:, 0].argsort()]
+            interpolated_path = self.make_center_path(left_orig, right_orig)
+
+        self.local_path_pub.publish(interpolated_path)
+
+    def make_shifted_path(self, lane_points, lane_side):
+        # 보간 및 접선 계산
+        if len(lane_points) >= 3:
+            tck, u = splprep([lane_points[:, 0], lane_points[:, 1]], s=1, k=2)
+            u_new = np.linspace(0, 1, num=100)
+            x_new, y_new = splev(u_new, tck)
+            if len(x_new) >= 2:
+                dx_new = np.gradient(x_new)
+                dy_new = np.gradient(y_new)
+            else:
+                dx_new = [0] * len(x_new)
+                dy_new = [0] * len(y_new)
+        else:
+            x_new, y_new = lane_points[:, 0], lane_points[:, 1]
+            if len(x_new) >= 2:
+                dx_new = np.gradient(x_new)
+                dy_new = np.gradient(y_new)
+            else:
+                dx_new = [0] * len(x_new)
+                dy_new = [0] * len(y_new)
+
+        # 법선 오프셋 적용: 오른쪽 lane만 있으면 왼쪽으로, 왼쪽 lane만 있으면 오른쪽으로 이동
+        offset_distance = 15.0  # 필요에 따라 조정
+        x_new_shifted, y_new_shifted = [], []
+        for x_val, y_val, dx, dy in zip(x_new, y_new, dx_new, dy_new):
+            norm = np.sqrt(dx**2 + dy**2)
+            if norm == 0:
+                nx, ny = 0, 0
+            else:
+                if lane_side == 'right':
+                    nx, ny = -dy/norm, dx/norm
+                else:
+                    nx, ny = dy/norm, -dx/norm
+            x_new_shifted.append(x_val + offset_distance * nx)
+            y_new_shifted.append(y_val + offset_distance * ny)
+
+        x_new, y_new = x_new_shifted, y_new_shifted
+
+        # 최종 경로 메시지 생성 (grid index → 실제 좌표 변환)
+        interpolated_path = Path()
+        interpolated_path.header.frame_id = 'map'
+        interpolated_path.header.stamp = rospy.Time.now()
+        for x, y in zip(x_new, y_new):
+            pose_stamped = PoseStamped()
+            pose_stamped.header.frame_id = 'map'
+            pose_stamped.header.stamp = rospy.Time.now()
+            pose_stamped.pose.position.x = self.origin_x + x * self.occ_grid_resolution
+            pose_stamped.pose.position.y = self.origin_y + y * self.occ_grid_resolution
+            pose_stamped.pose.position.z = 0.0
+            pose_stamped.pose.orientation = Quaternion(0, 0, 0, 1)
+            interpolated_path.poses.append(pose_stamped)
+        return interpolated_path
+
+    def make_center_path(self, left_orig, right_orig): 
+        raw_waypoints = []
         left_idx, right_idx = 0, 0
         while left_idx < len(left_orig) and right_idx < len(right_orig):
             avg_x = (left_orig[left_idx][0] + right_orig[right_idx][0]) / 2
             avg_y = (left_orig[left_idx][1] + right_orig[right_idx][1]) / 2
-            x = self.origin_x + avg_x * self.occ_grid_resolution - 0.25
+            x = self.origin_x + avg_x * self.occ_grid_resolution 
             y = self.origin_y + avg_y * self.occ_grid_resolution
             raw_waypoints.append((x, y))
             left_idx += 1
@@ -75,7 +184,7 @@ class GridSlidingWindow:
         while left_idx < len(left_orig):
             avg_x = (left_orig[left_idx][0] + right_orig[-1][0]) / 2
             avg_y = (left_orig[left_idx][1] + right_orig[-1][1]) / 2
-            x = self.origin_x + avg_x * self.occ_grid_resolution - 0.25
+            x = self.origin_x + avg_x * self.occ_grid_resolution 
             y = self.origin_y + avg_y * self.occ_grid_resolution
             raw_waypoints.append((x, y))
             left_idx += 1
@@ -83,31 +192,22 @@ class GridSlidingWindow:
         while right_idx < len(right_orig):
             avg_x = (left_orig[-1][0] + right_orig[right_idx][0]) / 2
             avg_y = (left_orig[-1][1] + right_orig[right_idx][1]) / 2
-            x = self.origin_x + avg_x * self.occ_grid_resolution - 0.25
+            x = self.origin_x + avg_x * self.occ_grid_resolution 
             y = self.origin_y + avg_y * self.occ_grid_resolution
             raw_waypoints.append((x, y))
             right_idx += 1
 
-        # 보간 전에 (0,0)을 무조건 리스트 맨 앞에 추가
-        raw_waypoints.insert(0, (0.0, 0.0))
         raw_waypoints = np.array(raw_waypoints)
-
-        # 3차 스플라인 보간: 충분한 점(최소 4개)일 경우에 적용
-        if len(raw_waypoints) >= 4:
-            # x, y 좌표를 분리
-            tck, u = splprep([raw_waypoints[:,0], raw_waypoints[:,1]], s=0, k=3)
-            # 보간할 점의 개수 (예: 100개)
+        if len(raw_waypoints) >= 3:
+            tck, u = splprep([raw_waypoints[:, 0], raw_waypoints[:, 1]], s=1, k=2)
             u_new = np.linspace(0, 1, num=100)
             x_new, y_new = splev(u_new, tck)
         else:
-            # 보간할 점이 부족하면 기존 점 그대로 사용
-            x_new, y_new = raw_waypoints[:,0], raw_waypoints[:,1]
+            x_new, y_new = raw_waypoints[:, 0], raw_waypoints[:, 1]
 
-        # 보간된 결과를 기반으로 Path 메시지 생성
         interpolated_path = Path()
         interpolated_path.header.frame_id = 'map'
         interpolated_path.header.stamp = rospy.Time.now()
-
         for x, y in zip(x_new, y_new):
             pose_stamped = PoseStamped()
             pose_stamped.header.frame_id = 'map'
@@ -118,35 +218,56 @@ class GridSlidingWindow:
             pose_stamped.pose.orientation = Quaternion(0, 0, 0, 1)
             interpolated_path.poses.append(pose_stamped)
 
-        self.local_path_pub.publish(interpolated_path)
+        return interpolated_path   
+    
 
-    def sliding_window_lane_detection_left(self, img_half, window_width, window_height, min_pixel_threshold):
-        # img_half는 단일 채널 8비트 이미지 (CV_8U)여야 함
-        out_img = cv2.cvtColor(img_half, cv2.COLOR_GRAY2BGR)
-        height, width = img_half.shape
+    def sliding_window_lane_detection_region(self, img, region, window_width, window_height, min_pixel_threshold):
+        """
+        img: 전체 단일 채널 이미지 (CV_8U)
+        region: 'left' 또는 'right'
+        """
+        height, width = img.shape
+        # 좌우 영역의 x 범위 결정
+        if region == 'left':
+            x_start, x_end = 0, width // 2
+        else:  # 'right'
+            x_start, x_end = width // 2, width
 
-        # 역이진화: occupied 픽셀(점유된 영역)을 검출
-        ret, binary = cv2.threshold(img_half, 127, 255, cv2.THRESH_BINARY_INV)
-        nonzero = cv2.findNonZero(binary)
-        if nonzero is None:
-            return [], out_img
+        # 해당 영역 내에서 시작점(current_x) 계산
+        region_img = img[:, x_start:x_end]
+        ret, binary = cv2.threshold(region_img, 127, 255, cv2.THRESH_BINARY_INV)
 
-        nonzero = nonzero.reshape(-1, 2)
+        occupied_count = cv2.countNonZero(binary)
+        nonzero_region = cv2.findNonZero(binary)
+        if nonzero_region is None:
+            return [], cv2.cvtColor(img, cv2.COLOR_GRAY2BGR), None  # None으로 처리
+        nonzero_region = nonzero_region.reshape(-1, 2)
+        
         start_y = height - 1 - window_height
-        min_y_occupied = int(np.min(nonzero[:, 1]))
-
-        bottom_indices = np.where(nonzero[:, 1] >= start_y - 5)[0]
+        # 영역 내에서 bottom_indices 계산 (여기서는 해당 영역만 사용)
+        bottom_indices = np.where(nonzero_region[:, 1] >= start_y - 25)[0]
         if len(bottom_indices) > 0:
-            current_x = int(np.mean(nonzero[bottom_indices, 0]))
+            region_current_x = int(np.mean(nonzero_region[bottom_indices, 0]))
+            current_x = region_current_x + x_start  # 전체 이미지 좌표로 변환
         else:
-            current_x = width // 2
+            current_x = (x_start + x_end) // 2
 
-        total_windows = 0         # 전체 창 개수 카운터
-        valid_lane_points = []    # 유효한 창(녹색 창)의 중심 좌표 리스트
-        invalid_lane_points = [] # 유효하지 않은 창(빨간색)의 중심 좌표 리스트
-        total_lane_points = []
-        current_y = start_y 
+        # 전체 이미지에서 min_y_occupied를 계산 (좌우 동일한 기준)
+        ret_all, binary_all = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
+        nonzero_all = cv2.findNonZero(binary_all)
+        if nonzero_all is None:
+            min_y_occupied = 0
+        else:
+            nonzero_all = nonzero_all.reshape(-1, 2)
+            min_y_occupied = int(np.min(nonzero_all[:, 1]))
+
+        out_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        lane_points = []
+        current_y = start_y
         consecutive_empty = 0
+
+        # 마지막 window 좌표 저장 변수 초기화
+        last_window_coord = None
 
         while True:
             if current_y - window_height < min_y_occupied or current_y < 0:
@@ -157,11 +278,9 @@ class GridSlidingWindow:
             win_x_low = max(0, current_x - window_width // 2)
             win_x_high = min(width, current_x + window_width // 2)
 
-            window_img = img_half[win_y_low:win_y_high, win_x_low:win_x_high]
+            window_img = img[win_y_low:win_y_high, win_x_low:win_x_high]
             ret, window_binary = cv2.threshold(window_img, 127, 255, cv2.THRESH_BINARY_INV)
             nonzero_window = cv2.findNonZero(window_binary)
-
-            total_windows += 1  # 전체 창 카운터 증가
 
             if nonzero_window is not None and len(nonzero_window) >= min_pixel_threshold:
                 nonzero_window = nonzero_window.reshape(-1, 2)
@@ -169,140 +288,68 @@ class GridSlidingWindow:
                 consecutive_empty = 0
                 color = (0, 255, 0)
                 center_y = (win_y_low + win_y_high) // 2
-                valid_lane_points.append((current_x, center_y))
+                lane_points.append(((current_x, center_y), "n"))
+                last_window_coord = (current_x, center_y)
             else:
                 consecutive_empty += 1
                 color = (0, 0, 255)
-                invalid_lane_points.append((current_x, current_y))
+                lane_points.append(((current_x, current_y), "e"))
                 if consecutive_empty >= self.max_empty_windows:
-                    # 일정 개수 이상의 연속된 무효 창이 있으면 종료 맨 위에 올라갈 곳이 없다고 판단되면 버림
-                    invalid_lane_points = invalid_lane_points[:-self.max_empty_windows]
+                    # max empty가 연속되면 탈출 (빈 window들도 저장)
+                    last_window_coord = (current_x, current_y)
                     break
 
             cv2.rectangle(out_img, (win_x_low, win_y_low), (win_x_high, win_y_high), color, 2)
             current_y -= window_height
-        total_lane_points = valid_lane_points + invalid_lane_points
-        # print("L전체 창 개수:", total_windows, "L초록창 개수:", len(valid_lane_points), "L빨간창 개수", len(invalid_lane_points))
-        if len(total_lane_points) == 0: 
-            win_y_low = start_y - window_height
-            win_y_high = start_y
-            win_x_low = max(0, width // 2 - window_width // 2)
-            win_x_high = min(width, width // 2+ window_width // 2)
-            color = (255, 0, 0)
-            cv2.rectangle(out_img, (win_x_low, win_y_low), (win_x_high, win_y_high), color, 2)
-            # print("L창이 없어서 중앙으로")
-            total_lane_points.append((width // 2, start_y))
-        return total_lane_points, out_img
 
-    def sliding_window_lane_detection_right(self, img_half, window_width, window_height, min_pixel_threshold):
-        # img_half는 단일 채널 8비트 이미지 (CV_8U)여야 함
-        out_img = cv2.cvtColor(img_half, cv2.COLOR_GRAY2BGR)
-        height, width = img_half.shape
+        # lane_points를 y좌표 기준 오름차순 정렬
+        lane_points_sorted = sorted(lane_points, key=lambda p: p[0][1])
 
-        # 역이진화: occupied 픽셀(점유된 영역)을 검출
-        ret, binary = cv2.threshold(img_half, 127, 255, cv2.THRESH_BINARY_INV)
-        nonzero = cv2.findNonZero(binary)
-        if nonzero is None:
-            return [], out_img
-
-        nonzero = nonzero.reshape(-1, 2)
-        start_y = height - 1 - window_height
-        min_y_occupied = int(np.min(nonzero[:, 1]))
-
-        bottom_indices = np.where(nonzero[:, 1] >= start_y - 5)[0]
-        if len(bottom_indices) > 0:
-            current_x = int(np.mean(nonzero[bottom_indices, 0]))
-        else:
-            current_x = width // 2
-
-        total_windows = 0         # 전체 창 개수 카운터
-        valid_lane_points = []    # 유효한 창(녹색 창)의 중심 좌표 리스트
-        invalid_lane_points = [] # 유효하지 않은 창(빨간색)의 중심 좌표 리스트
-        total_lane_points = []
-        current_y = start_y 
-        consecutive_empty = 0
-
-        while True:
-            if current_y - window_height < min_y_occupied or current_y < 0:
+        # non-empty("n")인 구간의 양 끝 추출
+        first_n_idx = None
+        last_n_idx = None
+        for i, (pt, flag) in enumerate(lane_points_sorted):
+            if flag == "n":
+                first_n_idx = i
                 break
 
-            win_y_low = current_y - window_height
-            win_y_high = current_y
-            win_x_low = max(0, current_x - window_width // 2)
-            win_x_high = min(width, current_x + window_width // 2)
+        for i in range(len(lane_points_sorted) - 1, -1, -1):
+            if lane_points_sorted[i][1] == "n":
+                last_n_idx = i
+                break
 
-            window_img = img_half[win_y_low:win_y_high, win_x_low:win_x_high]
-            ret, window_binary = cv2.threshold(window_img, 127, 255, cv2.THRESH_BINARY_INV)
-            nonzero_window = cv2.findNonZero(window_binary)
+        if first_n_idx is not None and last_n_idx is not None:
+            lane_points_final = lane_points_sorted[first_n_idx:last_n_idx + 1]
+        else:
+            lane_points_final = []
 
-            total_windows += 1  # 전체 창 카운터 증가
+        # 좌표만 추출
+        lane_points_final = [pt for pt, flag in lane_points_final]
 
-            if nonzero_window is not None and len(nonzero_window) >= min_pixel_threshold:
-                nonzero_window = nonzero_window.reshape(-1, 2)
-                current_x = win_x_low + int(np.mean(nonzero_window[:, 0]))
-                consecutive_empty = 0
-                color = (0, 255, 0)
-                center_y = (win_y_low + win_y_high) // 2
-                valid_lane_points.append((current_x, center_y))
-            else:
-                consecutive_empty += 1
-                color = (0, 0, 255)
-                invalid_lane_points.append((current_x, current_y))
-                if consecutive_empty >= self.max_empty_windows:
-                    invalid_lane_points = invalid_lane_points[:-self.max_empty_windows]
-                    # 일정 개수 이상의 연속된 무효 창이 있으면 종료
-                    break
-
-            cv2.rectangle(out_img, (win_x_low, win_y_low), (win_x_high, win_y_high), color, 2)
-            current_y -= window_height
-        total_lane_points = valid_lane_points + invalid_lane_points
-        # print("R전체 창 개수:", total_windows, "R초록창 개수:", len(valid_lane_points), "R빨간창 개수", len(invalid_lane_points))
-        if len(total_lane_points) == 0:
-            # print("R창이 없어서 중앙으로")
-            win_y_low = start_y - window_height
-            win_y_high = start_y
-            win_x_low = max(0, width // 2 - window_width // 2)
-            win_x_high = min(width, width // 2+ window_width // 2)
-            color = (255, 0, 0)
-            cv2.rectangle(out_img, (win_x_low, win_y_low), (win_x_high, win_y_high), color, 2)
-            total_lane_points.append((width // 2, start_y))       
-        return total_lane_points, out_img
+        # occupied_count 대신 마지막 sliding window 좌표 반환
+        return lane_points_final, out_img, last_window_coord
 
     def process_occupancy_grid(self, msg: OccupancyGrid):
-        # OccupancyGrid 데이터를 (height, width) shape의 numpy 배열로 변환
         grid_data = np.array(msg.data).reshape((msg.info.height, msg.info.width))
-        # 0~100 값을 0~255 범위로 변환 후 반전 (점유된 곳은 어둡게)
         img = 255 - (grid_data * 255 // 100).astype(np.uint8)
-        # y축 반전: 원래 OccupancyGrid의 아래쪽이 원점일 수 있으므로
         grid_data_flipped = img[::-1]
-        # 행렬 전치 후에 행을 뒤집기
         processed_img = np.transpose(grid_data_flipped)[::-1]
-        # 회전된 이미지에서 좌우 분할 (실제 열 크기를 기준)
-        rotated_mid_x = processed_img.shape[1] // 2
-        left_img = processed_img[:, :rotated_mid_x]
-        right_img = processed_img[:, rotated_mid_x:]
-        
-        left_lane_points, left_vis = self.sliding_window_lane_detection_left(left_img, self.window_width, self.window_height, self.min_pixel_threshold)
-        # if len(left_lane_points): print(left_lane_points[-1],"좌측 맨 뒤 좌표")
-        right_lane_points, right_vis = self.sliding_window_lane_detection_right(right_img, self.window_width, self.window_height, self.min_pixel_threshold)
-        # if len(right_lane_points): print(right_lane_points[-1],"우측 맨 뒤 좌표")
-        left_lane_points = np.array(left_lane_points)
-        right_lane_points = np.array(right_lane_points)
 
-        # 우측 이미지 좌표는 회전된 이미지 기준이므로 x 좌표에 offset 적용
-        if right_lane_points.shape[0] > 0:
-            right_lane_points[:, 0] += rotated_mid_x
-
-        combined_vis = np.zeros((processed_img.shape[0], processed_img.shape[1], 3), dtype=np.uint8)
-        combined_vis[:, :rotated_mid_x] = left_vis
-        combined_vis[:, rotated_mid_x:] = right_vis
-        # print(combined_vis.shape)
+        # 왼쪽과 오른쪽 영역에서 lane point 검출
+        left_lane_points, left_vis, last_left_point = self.sliding_window_lane_detection_region(processed_img, 'left',
+                                                                                self.window_width,
+                                                                                self.window_height,
+                                                                                self.min_pixel_threshold)
+        right_lane_points, right_vis, last_right_point = self.sliding_window_lane_detection_region(processed_img, 'right',
+                                                                                  self.window_width,
+                                                                                  self.window_height,
+                                                                                  self.min_pixel_threshold)
+        combined_vis = cv2.addWeighted(left_vis, 0.5, right_vis, 0.5, 0)
         expanded_img = cv2.resize(combined_vis, (350, 500), interpolation=cv2.INTER_LINEAR)
         cv2.imshow("Occupancy Map with ROI and Sliding Windows", expanded_img)
         cv2.waitKey(1)
-        
-        return processed_img, left_lane_points, right_lane_points
 
+        return processed_img, left_lane_points, right_lane_points, last_left_point, last_right_point
 
 if __name__ == '__main__':
     rospy.init_node("grid_sliding_window", anonymous=True)

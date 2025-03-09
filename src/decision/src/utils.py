@@ -13,32 +13,33 @@ import copy
 DEG2RAD = 1 / 180 * pi
 RAD2DEG = 1 / DEG2RAD
 
-# class pathReader :  ## 텍스트 파일에서 경로를 출력 ##
-#     def __init__(self,pkg_name):
-#         rospack=rospkg.RosPack()
-#         self.file_path=rospack.get_path(pkg_name)
+class PathReader :  ## 텍스트 파일에서 경로를 출력 ##
+    def __init__(self,pkg_name):
+        rospack=rospkg.RosPack()
+        self.file_path=rospack.get_path(pkg_name)
+        print("hello", self.file_path)
 
-#     def read_txt(self,file_name):
-#         full_file_name=self.file_path+"/path/"+file_name
-#         openFile = open(full_file_name, 'r')
-#         out_path_control=Path()
+    def read_txt(self,file_name):
+        full_file_name=self.file_path+"/path/"+file_name
+        openFile = open(full_file_name, 'r')
+        global_path = Path()
 
-#         out_path_control.header.frame_id='map'
-#         line=openFile.readlines()
-#         for i in line :
-#             tmp=i.split()
-#             read_pose=PoseStamped()
-#             read_pose.pose.position.x=float(tmp[0])
-#             read_pose.pose.position.y=float(tmp[1])
-#             read_pose.pose.position.z=0
-#             read_pose.pose.orientation.x=0
-#             read_pose.pose.orientation.y=0
-#             read_pose.pose.orientation.z=0
-#             read_pose.pose.orientation.w=1
-#             out_path_control.poses.append(read_pose)
+        global_path.header.frame_id='map'
+        line=openFile.readlines()
+        for i in line :
+            tmp=i.split(",")
+            read_pose=PoseStamped()
+            read_pose.pose.position.x=float(tmp[3])
+            read_pose.pose.position.y=float(tmp[4])
+            read_pose.pose.position.z=0
+            read_pose.pose.orientation.x=0
+            read_pose.pose.orientation.y=0
+            read_pose.pose.orientation.z=0
+            read_pose.pose.orientation.w=1
+            global_path.poses.append(read_pose)
 
-#         openFile.close()
-#         return out_path_control ## 읽어온 경로를 global_path로 반환 ##
+        openFile.close()
+        return global_path 
     
 # def findCurrentwaypoint(ref_path, status_msg):
 #     current_x=status_msg.position.x
@@ -128,7 +129,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
                     self.lfd = static_lfd
                 
                 if dis >= self.lfd:
-                    rospy.loginfo(f'dis: {dis} | self.lfd: {self.lfd}')
+                    # rospy.loginfo(f'dis: {dis} | self.lfd: {self.lfd}')
                     # self.lfd = self.current_vel * 0.2 # sangam
                     self.lfd = self.current_vel * 0.8 # 0306 Morai
 
@@ -178,7 +179,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
 
 class PidController : ## 속도 제어를 위한 PID 적용 ##
     def __init__(self):
-        self.p_gain = 0.1
+        self.p_gain = 0.09
         self.i_gain = 0.0        
         self.d_gain = 0.05
         self.controlTime = 0.025 
