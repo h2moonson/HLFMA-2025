@@ -6,7 +6,7 @@ import numpy as np
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CompressedImage
 
-class MoraiCamNode:
+class IPM:
     def __init__(self):
         DEG2RAD = 0.0174532925
 
@@ -72,5 +72,5 @@ class MoraiCamNode:
 
 if __name__ == '__main__':
     rospy.init_node('morai_cam_node')
-    node = MoraiCamNode()
+    node = IPM()
     rospy.spin()
