@@ -9,7 +9,9 @@
         <param name="camera_frame_id" value="usb_cam"/>
     </node>
 
-    <!-- <node pkg="vision" type="yolop_node" name="yolop_node" output="screen"/> -->
+    <node pkg="vision" type="yolop_node" name="yolop_node" output="screen">
+        <param name="use_morai" value="$(arg use_morai)">
+    </node>
     
     <node pkg="vision" type="ipm.py" name="ipm" output="screen">
         <!-- 카메라 pitch (deg) -->
