@@ -346,8 +346,8 @@ class GridSlidingWindow:
                                                                                   self.min_pixel_threshold)
         combined_vis = cv2.addWeighted(left_vis, 0.5, right_vis, 0.5, 0)
         expanded_img = cv2.resize(combined_vis, (350, 500), interpolation=cv2.INTER_LINEAR)
-        cv2.imshow("Occupancy Map with ROI and Sliding Windows", expanded_img)
-        cv2.waitKey(1)
+        # cv2.imshow("Occupancy Map with ROI and Sliding Windows", expanded_img)
+        # cv2.waitKey(1)
 
         return processed_img, left_lane_points, right_lane_points, last_left_point, last_right_point
 
