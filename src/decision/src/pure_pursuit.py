@@ -31,9 +31,13 @@ class PurePursuitNode:
         self.current_waypoint_pub           = rospy.Publisher('/current_waypoint', Int64, queue_size=1)
         self.pure_pursuit_target_point_pub  = rospy.Publisher('/pure_pursuit_target_point', Marker, queue_size=1)
         self.curvature_target_point_pub     = rospy.Publisher('/curvature_target_point', Marker, queue_size=1)
+        self.global_path_pub                = rospy.Publisher('/global_path', Path, queue_size=1) 
+        ########################  모라이 K-city - 제주도 보정용 파라미터  ########################
+        self.map_origin = [0.0, 0.0] # 실행 시 최초 GPS 시작점 좌표 받음 - 실제로는 position covariance 값 안정화 될 때 까지 기다릴 것
+        self.k_city_origin = [302473.4671541687, 4123735.5805772855] # UTM변환 시 East, North
+        self.jeju_cw_origin = [249947.5672, 3688367.483] # UTM변환 시 East, North
+        self.jeju_ccw_origin = [249961.5167, 3688380.892] # UTM변환 시 East, North
 
-        ########################  lattice  ########################
-        ########################  lattice  ########################
 
         self.status_msg = EgoStatus()
         self.ctrl_cmd_msg = CtrlCmd()
@@ -44,7 +48,7 @@ class PurePursuitNode:
 
         ### Param - Lateral Controller ###
         self.lfd = 0.0
-        self.current_waypoint = [0.0, 0.0]
+        self.current_waypoint = 0
         self.target_x = 0.0
         self.target_y = 0.0
         self.curvature_target_x = 0.0
@@ -65,33 +69,28 @@ class PurePursuitNode:
         self.quaternion_data = [0,0,0,0]
 
         ### Param - tf ### 
-        self.proj_UTM = Proj(proj='utm', zone = 52, elips='WGS84', preserve_units=False)
+        self.proj_UTM = Proj(proj='utm', zone = 52, ellps='WGS84', preserve_units=False)
         self.tf_broadcaster = tf.TransformBroadcaster()
-
-        # ######################################## For Service ########################################
-        # rospy.wait_for_service('/Service_MoraiEventCmd')
-        # self.req_service = rospy.ServiceProxy('/Service_MoraiEventCmd', MoraiEventCmdSrv)
-        # self.req = EventInfo()
-        # #############################################################################################
-        
-        ### Class ###
-        self.local_path = Path()
-        path_reader = PathReader('decision') ## 경로 파일의 위치
-        self.pure_pursuit = PurePursuit() ## purePursuit import
-        pid = PidController()
 
         # Subscriber
         rospy.Subscriber("/Ego_topic", EgoVehicleStatus, self.egoStatusCB) ## PID테스트 위해서 모라이에서 속도 받아오기  
         rospy.Subscriber("/gps", GPSMessage, self.gpsCB) ## Vehicle Status Subscriber 
-        rospy.Subscriber("/local_path", Path, self.localpathCB)
+        rospy.Subscriber("/grid_sliding_window_path", Path, self.grid_sliding_window_pathCB)
         self.pid_control_input = 0.0
         self.steering_offset = 0.03
 
         self.current_velocity = 0
         
-        # ### Read path ###
-        # self.cw_path = path_reader.read_txt("clockwise.txt") ## 출력할 경로의 이름
-        # self.ccw_path = path_reader.read_txt("counter_clockwise.txt") ## 출력할 경로의 이름
+        
+        ### Class ###
+        self.grid_sliding_window_path = Path()
+        path_reader = PathReader('decision', self.jeju_cw_origin) ## 경로 파일의 위치, offset 적용
+        self.pure_pursuit = PurePursuit() ## purePursuit import
+        pid = PidController()
+
+        ### Read path ###
+        self.cw_path = path_reader.read_txt("clockwise.txt") ## 출력할 경로의 이름
+        self.ccw_path = path_reader.read_txt("counter_clockwise.txt") ## 출력할 경로의 이름
         
         rate = rospy.Rate(40) 
         
@@ -100,16 +99,15 @@ class PurePursuitNode:
             
             if self.is_gps_status == True : 
                 self.ctrl_cmd_msg.longlCmdType = 1
-                self.pure_pursuit.getPath(self.local_path) #일단 local_path로만 주행 테스트 
-
+                self.current_waypoint = self.pure_pursuit.findCurrentWaypoint(self.cw_path, self.status_msg) # utils에서 계산하도록 속도, 위치 넘겨줌
+                local_path = self.pure_pursuit.findLocalPath(self.cw_path, self.status_msg)
+                self.pure_pursuit.getPath(local_path) 
                 self.pure_pursuit.getEgoStatus(self.status_msg) # utils에서 계산하도록 속도, 위치 넘겨줌
                 # @TODO getEgoStatus에 임시로 local path테스트만 하기에 0, 0 으로 함수 내부에서 설정해둠 > 추후 수정
-                
                 self.steering, self.target_x, self.target_y, self.lfd = self.pure_pursuit.steeringAngle(1.5)
                 estimate_curvature = self.pure_pursuit.estimateCurvature()
 
                 if not estimate_curvature:
-                    rospy.loginfo('i dont have path') 
                     continue
 
                 self.corner_theta_degree, self.curvature_target_x, self.curvature_target_y = estimate_curvature
@@ -126,40 +124,41 @@ class PurePursuitNode:
 
                 self.steering_msg = (self.steering + 2.7) * self.steering_offset
 
-                self.current_waypoint_pub.publish(self.current_waypoint)
 
+                self.current_waypoint_pub.publish(self.current_waypoint)
+                self.global_path_pub.publish(self.cw_path)
                 self.visualizeEgoPoint()
                 self.visualizeTargetPoint()
                 self.publishCtrlCmd(self.accel_msg, self.steering_msg, self.brake_msg)
+            rate.sleep()
 
-        rate.sleep()
-
-    def getEgoCoord(self): ## Vehicle Status Subscriber 
+    def getEgoCoord(self):  # Vehicle Status Subscriber
         if self.is_gps == True:
-            self.status_msg.position.x = self.xy_zone[0] - 313008.55819800857
-            self.status_msg.position.y = self.xy_zone[1] - 4161698.628368007
+            # 위치 업데이트: gpsCB에서 받은 좌표에 기초
+            self.status_msg.position.x = self.xy_zone[0] - self.k_city_origin[0]
+            self.status_msg.position.y = self.xy_zone[1] - self.k_city_origin[1]
             self.status_msg.position.z = 0.0
-            self.status_msg.heading = self.euler_data[2] * 180/np.pi
+            # 여기서 self.status_msg.heading은 이미 gpsCB에서 갱신된 값 사용
             self.status_msg.velocity.x = self.current_velocity
 
-            self.tf_broadcaster.sendTransform((self.status_msg.position.x, self.status_msg.position.y, self.status_msg.position.z),
-                            tf.transformations.quaternion_from_euler(0, 0, (self.status_msg.heading)/180*np.pi),
-                            rospy.Time.now(),
-                            "base_link",
-                            "map")
-
-            self.is_gps_status=True
+            self.tf_broadcaster.sendTransform(
+                (self.status_msg.position.x, self.status_msg.position.y, self.status_msg.position.z),
+                tf.transformations.quaternion_from_euler(0, 0, (self.status_msg.heading) / 180 * np.pi),
+                rospy.Time.now(),
+                "base_link",
+                "map"
+            )
+            self.is_gps_status = True
 
         elif self.is_gps is False:
-            self.status_msg.heading = self.euler_data[2] * 180/np.pi
-            self.is_gps_status=False
+            self.is_gps_status = False
 
         else:
             rospy.loginfo("Waiting for GPS")
-            self.is_gps_status=False
+            self.is_gps_status = False
 
-    def localpathCB(self, msg): 
-        self.local_path = msg
+    def grid_sliding_window_pathCB(self, msg): 
+        self.grid_sliding_window_path = msg
 
     def gpsCB(self, msg: GPSMessage):
         if msg.status == 0: 
@@ -168,6 +167,7 @@ class PurePursuitNode:
 
         else:
             new_xy = self.proj_UTM(msg.longitude, msg.latitude)
+
             # 이전 좌표와의 차이를 계산
             if hasattr(self, 'prev_xy'):
                 dx = new_xy[0] - self.prev_xy[0]
@@ -179,7 +179,8 @@ class PurePursuitNode:
                     self.status_msg.heading = np.degrees(np.arctan2(dy, dx))
                     self.prev_xy = new_xy
             else:
-                # 첫번째 GPS 메시지인 경우 이전 좌표 저장
+                # 첫번째 GPS 메시지인 경우 이전 좌표 저장 + map 원점 반영
+                rospy.loginfo(f"First GPS message received{new_xy}")
                 self.prev_xy = new_xy
 
             self.xy_zone = new_xy
@@ -271,8 +272,8 @@ class PurePursuitNode:
         ego_point.color.b = 1.0
         ego_point.color.a = 1.0 
         
-        ego_point.pose.position.x = self.current_waypoint[0]
-        ego_point.pose.position.y = self.current_waypoint[1]
+        ego_point.pose.position.x = self.status_msg.position.x 
+        ego_point.pose.position.y = self.status_msg.position.y
         ego_point.pose.position.z = 0.0
         
         self.ego_marker_pub.publish(ego_point)
