@@ -5,3 +5,6 @@
 	path = src/vision/src/tensorrtx
 	url = https://github.com/powerslam/tensorrtx.git
 	branch = ieve_2025/PC
+[submodule "src/MORAI-ROS_morai_msgs"]
+    path = src/MORAI-ROS_morai_msgs
+    url = https://github.com/MORAI-Autonomous/MORAI-ROS_morai_msgs.git
