@@ -45,7 +45,7 @@ generate_dynamic_reconfigure_options(
 
 
 catkin_package(
-  INCLUDE_DIRS include
+#  INCLUDE_DIRS include
   LIBRARIES lidar_object_detection
   CATKIN_DEPENDS pcl_conversions pcl_ros roscpp sensor_msgs std_msgs geometry_msgs nav_msgs message_runtime laser_geometry dynamic_reconfigure
 #  EXPORTED_TARGETS ${PROJECT_NAME}_generate_message_cpp
@@ -70,6 +70,6 @@ catkin_install_python(PROGRAMS
     scripts/lattice_basic.py
     scripts/grid_sliding_window.py
     scripts/occupancy_grid_mapper.py
-    scripts/occupancy_grid_mapper2.py
+#    scripts/occupancy_grid_mapper2.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
