@@ -41,8 +41,8 @@ include_directories(
 ## CUDA 설정
 option(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 find_package(CUDA REQUIRED)
-include_directories(/usr/local/cuda-11.0/include)
-link_directories(/usr/local/cuda-11.0/lib64)
+include_directories(/usr/local/cuda/include)
+link_directories(/usr/local/cuda/lib64)
 
 ## OpenCV 설정
 find_package(OpenCV REQUIRED)
