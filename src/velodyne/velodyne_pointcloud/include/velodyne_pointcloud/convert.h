@@ -1,5 +1,5 @@
-// Copyright (C) 2009, 2010, 2011, 2012, 2019 Austin Robot Technology, Jack O'Quin, Jesse Vera, Joshua Whitley,
-// Sebastian Pütz All rights reserved.
+// Copyright (C) 2009, 2010, 2011, 2012, 2019 Austin Robot Technology, Jack O'Quin, Jesse Vera, Joshua Whitley
+// All rights reserved.
 //
 // Software License Agreement (BSD License 2.0)
 //
@@ -32,81 +32,71 @@
 
 /** @file
 
-    This class transforms raw Velodyne 3D LIDAR packets to PointCloud2
-    in the /map frame of reference.
+    This class converts raw Velodyne 3D LIDAR packets to PointCloud2.
 
 */
 
-#ifndef VELODYNE_POINTCLOUD_TRANSFORM_H
-#define VELODYNE_POINTCLOUD_TRANSFORM_H
+#ifndef VELODYNE_POINTCLOUD_CONVERT_H
+#define VELODYNE_POINTCLOUD_CONVERT_H
 
 #include <string>
+
 #include <ros/ros.h>
-#include "tf/message_filter.h"
-#include "message_filters/subscriber.h"
 #include <diagnostic_updater/diagnostic_updater.h>
 #include <diagnostic_updater/publisher.h>
-#include <sensor_msgs/PointCloud2.h>
 
+#include <sensor_msgs/PointCloud2.h>
 #include <velodyne_pointcloud/rawdata.h>
-#include <velodyne_pointcloud/pointcloudXYZIR.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <velodyne_pointcloud/TransformNodeConfig.h>
+#include <velodyne_pointcloud/CloudNodeConfig.h>
 
 namespace velodyne_pointcloud
 {
-using TransformNodeCfg = velodyne_pointcloud::TransformNodeConfig;
-
-class Transform
+class Convert
 {
-public:
-  Transform(
-      ros::NodeHandle node,
-      ros::NodeHandle private_nh,
-      std::string const & node_name = ros::this_node::getName());
-  ~Transform()
-  {
-  }
+  public:
+    Convert(
+        ros::NodeHandle node,
+        ros::NodeHandle private_nh,
+        std::string const & node_name = ros::this_node::getName());
+    ~Convert() {}
 
-private:
-  void processScan(const velodyne_msgs::VelodyneScan::ConstPtr& scanMsg);
+  private:
+    void callback(velodyne_pointcloud::CloudNodeConfig &config, uint32_t level);
+    void processScan(const velodyne_msgs::VelodyneScan::ConstPtr &scanMsg);
 
-  // Pointer to dynamic reconfigure service srv_
-  boost::shared_ptr<dynamic_reconfigure::Server<velodyne_pointcloud::TransformNodeConfig>> srv_;
-  void reconfigure_callback(velodyne_pointcloud::TransformNodeConfig& config, uint32_t level);
+    boost::shared_ptr<dynamic_reconfigure::Server<velodyne_pointcloud::CloudNodeConfig> > srv_;
 
-  const std::string tf_prefix_;
-  boost::shared_ptr<velodyne_rawdata::RawData> data_;
-  message_filters::Subscriber<velodyne_msgs::VelodyneScan> velodyne_scan_;
-  ros::Publisher output_;
-  boost::shared_ptr<tf::MessageFilter<velodyne_msgs::VelodyneScan>> tf_filter_ptr_;
-  boost::shared_ptr<tf::TransformListener> tf_ptr_;
+    boost::shared_ptr<velodyne_rawdata::RawData> data_;
+    ros::Subscriber velodyne_scan_;
+    ros::Publisher output_;
 
-  /// configuration parameters
-  typedef struct
-  {
-    std::string target_frame;  ///< target frame
-    std::string fixed_frame;   ///< fixed frame
-    bool organize_cloud;       ///< enable/disable organized cloud structure
-    double max_range;          ///< maximum range to publish
-    double min_range;          ///< minimum range to publish
-    uint16_t num_lasers;       ///< number of lasers
-  }
-  Config;
-  Config config_;
+    boost::shared_ptr<velodyne_rawdata::DataContainerBase> container_ptr_;
 
-  bool first_rcfg_call;
+    boost::mutex reconfigure_mtx_;
 
-  boost::shared_ptr<velodyne_rawdata::DataContainerBase> container_ptr;
+    /// configuration parameters
+    typedef struct
+    {
+      std::string target_frame;      ///< target frame
+      std::string fixed_frame;       ///< fixed frame
+      bool organize_cloud;           ///< enable/disable organized cloud structure
+      double max_range;              ///< maximum range to publish
+      double min_range;              ///< minimum range to publish
+      uint16_t num_lasers;           ///< number of lasers
+      int npackets;                  ///< number of packets to combine
+    }
+    Config;
+    Config config_;
+    bool first_rcfg_call;
 
   // diagnostics updater
   diagnostic_updater::Updater diagnostics_;
   double diag_min_freq_;
   double diag_max_freq_;
   boost::shared_ptr<diagnostic_updater::TopicDiagnostic> diag_topic_;
-  boost::mutex reconfigure_mtx_;
 };
 }  // namespace velodyne_pointcloud
 
-#endif  // VELODYNE_POINTCLOUD_TRANSFORM_H
+#endif  // VELODYNE_POINTCLOUD_CONVERT_H

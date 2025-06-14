@@ -1,57 +1,6 @@
 Change history
 ==============
 
-1.7.0 (2022-07-08)
-------------------
-* Fix non-responsive node on packet timeout (`#466 <https://github.com/ros-drivers/velodyne/issues/466>`_)
-  * No abort on packet timeout
-  Changed getPacket() to return 0 on timeout and 1 on success.
-  * Removed trailing whitespace
-* reuse Velodyne UDP port (`#427 <https://github.com/ros-drivers/velodyne/issues/427>`_)
-* add missing include to pcap.h that prevents tests from being built (`#406 <https://github.com/ros-drivers/velodyne/issues/406>`_)
-* PCAP timestamps & PCAP+GPS timestamps (`#384 <https://github.com/ros-drivers/velodyne/issues/384>`_)
-  * Add pcap_time param and implement gps_time with it
-  * If gps_time == true, ignore pcap_time
-* Add support for the velodyne Alpha Prime (`#370 <https://github.com/ros-drivers/velodyne/issues/370>`_)
-  * Add support for the velodyne Alpha Prime
-  * Change packet rate for the VLS128 according to the times specified in the manual
-  * Organize setup functions to avoid code duplication. Add a constant for the model ID of the VLS128.
-  * Use the defined constants to calculate the time offset of the points for the VLS128
-  Co-authored-by: jugo <juan.gonzalez@unibw.de>
-* Contributors: HMellor, Institute for Autonomous Systems Technology, JKaniarz, Nagy Dániel Zoltán, Sebastian Scherer
-
-1.6.1 (2020-11-09)
-------------------
-
-1.6.0 (2020-07-09)
-------------------
-* Unify tf frame parameters between transform and cloud nodes (`#344 <https://github.com/ros-drivers/velodyne/issues/344>`_)
-  * Unify tf frame parameters between transform and cloud nodes
-  * Use more common ROS terminology instead of 'htm'
-  * Just use tf listener when necessary
-  * Migrate package to tf2
-  * Explicitly store sensor frame in a dedicated variable to make code easier to read
-  * Avoid unnecessary transforms when sensor_frame == target_frame
-  Co-authored-by: anre <andreas.reich@unibw.de>
-* Updating maintainer email address.
-* when device poll timeouts, do not stop node
-* use correct node handles and node names for diagnostic_updater::Updater
-* Added config option to timestamp a full scan based on first velo packet instead of last packet
-* Merge pull request `#214 <https://github.com/ros-drivers/velodyne/issues/214>`_ from spuetz/feature/opc_nopcl
-  Container cleanup and organized pointclouds
-* Merge pull request `#243 <https://github.com/ros-drivers/velodyne/issues/243>`_ from dandedrick/reconfig-enable
-  driver: add enabled reconfigure param
-* Merge pull request `#234 <https://github.com/ros-drivers/velodyne/issues/234>`_ from kmhallen/c++11
-  Set minimum C++ standard to C++11
-* Merge pull request `#222 <https://github.com/ros-drivers/velodyne/issues/222>`_ from mpitropov/feat_Use_GPS_time
-  Add flag to enable using GPS time from within the Velodyne packet instead of ROS time for scan.
-* Merge pull request `#220 <https://github.com/ros-drivers/velodyne/issues/220>`_ from nbussas/static
-  Transform static variable into member
-* Merge pull request `#216 <https://github.com/ros-drivers/velodyne/issues/216>`_ from ros-drivers/maint/poll_timeout_handling
-  Testing reporting error instead of stopping node on disconnect.
-* fixed in range min max, and cleaned up the initialization
-* Contributors: AndreasR30, Dan Dedrick, Daniel Seifert, Joshua Whitley, Kevin Hallenbeck, Matthew Pitropov, Nils Hauke Bussas, Sebastian, Sebastian Pütz, Shawn Hanna
-
 1.5.2 (2019-01-28)
 ------------------
 * Merge pull request `#212 <https://github.com/ros-drivers/velodyne/issues/212>`_ from ros-drivers/maint/vdump_as_root

@@ -39,10 +39,13 @@
 
 using namespace velodyne_pointcloud;  // NOLINT
 
-std::string get_package_path()
+// global test data
+std::string g_package_name("velodyne_pointcloud");
+std::string g_package_path;
+
+void init_global_data(void)
 {
-  std::string g_package_name("velodyne_pointcloud");
-  return ros::package::getPath(g_package_name);
+  g_package_path = ros::package::getPath(g_package_name);
 }
 
 ///////////////////////////////////////////////////////////////
@@ -58,7 +61,7 @@ TEST(Calibration, missing_file)
 
 TEST(Calibration, vlp16)
 {
-  Calibration calibration(get_package_path() + "/params/VLP16db.yaml", false);
+  Calibration calibration(g_package_path + "/params/VLP16db.yaml", false);
   EXPECT_TRUE(calibration.initialized);
   ASSERT_EQ(calibration.num_lasers, 16);
 
@@ -81,7 +84,7 @@ TEST(Calibration, vlp16)
 
 TEST(Calibration, hdl32e)
 {
-  Calibration calibration(get_package_path() + "/params/32db.yaml", false);
+  Calibration calibration(g_package_path + "/params/32db.yaml", false);
   EXPECT_TRUE(calibration.initialized);
   ASSERT_EQ(calibration.num_lasers, 32);
 
@@ -104,13 +107,13 @@ TEST(Calibration, hdl32e)
 
 TEST(Calibration, hdl64e)
 {
-  Calibration calibration(get_package_path() + "/params/64e_utexas.yaml", false);
+  Calibration calibration(g_package_path + "/params/64e_utexas.yaml", false);
   EXPECT_TRUE(calibration.initialized);
   ASSERT_EQ(calibration.num_lasers, 64);
 
   // check some values for the first laser:
   LaserCorrection laser = calibration.laser_corrections[0];
-  EXPECT_TRUE(laser.two_pt_correction_available);
+  EXPECT_FALSE(laser.two_pt_correction_available);
   EXPECT_FLOAT_EQ(laser.vert_correction, -0.124932751059532);
   EXPECT_FLOAT_EQ(laser.horiz_offset_correction, 0.0);
   EXPECT_EQ(laser.max_intensity, 255);
@@ -118,7 +121,7 @@ TEST(Calibration, hdl64e)
 
   // check similar values for the last laser:
   laser = calibration.laser_corrections[63];
-  EXPECT_TRUE(laser.two_pt_correction_available);
+  EXPECT_FALSE(laser.two_pt_correction_available);
   EXPECT_FLOAT_EQ(laser.vert_correction, -0.209881335496902);
   EXPECT_FLOAT_EQ(laser.horiz_offset_correction, 0.0);
   EXPECT_EQ(laser.max_intensity, 255);
@@ -127,14 +130,14 @@ TEST(Calibration, hdl64e)
 
 TEST(Calibration, hdl64e_s21)
 {
-  Calibration calibration(get_package_path() + "/params/64e_s2.1-sztaki.yaml",
+  Calibration calibration(g_package_path + "/params/64e_s2.1-sztaki.yaml",
                           false);
   EXPECT_TRUE(calibration.initialized);
   ASSERT_EQ(calibration.num_lasers, 64);
 
   // check some values for the first laser:
   LaserCorrection laser = calibration.laser_corrections[0];
-  EXPECT_TRUE(laser.two_pt_correction_available);
+  EXPECT_FALSE(laser.two_pt_correction_available);
   EXPECT_FLOAT_EQ(laser.vert_correction, -0.15304134919741974);
   EXPECT_FLOAT_EQ(laser.horiz_offset_correction, 0.025999999);
   EXPECT_EQ(laser.max_intensity, 235);
@@ -142,7 +145,7 @@ TEST(Calibration, hdl64e_s21)
 
   // check similar values for the last laser:
   laser = calibration.laser_corrections[63];
-  EXPECT_TRUE(laser.two_pt_correction_available);
+  EXPECT_FALSE(laser.two_pt_correction_available);
   EXPECT_FLOAT_EQ(laser.vert_correction, -0.2106649408137298);
   EXPECT_FLOAT_EQ(laser.horiz_offset_correction, -0.025999999);
   EXPECT_EQ(laser.max_intensity, 255);
@@ -151,7 +154,7 @@ TEST(Calibration, hdl64e_s21)
 
 TEST(Calibration, hdl64e_s2_float_intensities)
 {
-  Calibration calibration(get_package_path() +
+  Calibration calibration(g_package_path +
                           "/tests/issue_84_float_intensities.yaml",
                           false);
   EXPECT_TRUE(calibration.initialized);
@@ -186,6 +189,7 @@ TEST(Calibration, hdl64e_s2_float_intensities)
 int main(int argc, char **argv)
 {
   testing::InitGoogleTest(&argc, argv);
+  init_global_data();
   return RUN_ALL_TESTS();
 }
 

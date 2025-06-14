@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>velodyne_driver</name>
-  <version>1.7.0</version>
+  <version>1.5.2</version>
   <description>
     ROS device driver for Velodyne 3D LIDARs.
   </description>
@@ -19,6 +19,8 @@
 
   <buildtool_depend>catkin</buildtool_depend>
 
+  <build_depend>roslint</build_depend>
+
   <depend>diagnostic_updater</depend>
   <depend>dynamic_reconfigure</depend>
   <depend>libpcap</depend>
@@ -28,7 +30,6 @@
   <depend>velodyne_msgs</depend>
 
   <test_depend>roslaunch</test_depend>
-  <test_depend>roslint</test_depend>
   <test_depend>rostest</test_depend>
 
   <export>

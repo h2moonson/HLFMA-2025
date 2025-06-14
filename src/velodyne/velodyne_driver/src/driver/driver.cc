@@ -62,14 +62,7 @@ VelodyneDriver::VelodyneDriver(ros::NodeHandle node,
   private_nh.param("model", config_.model, std::string("64E"));
   double packet_rate;                   // packet frequency (Hz)
   std::string model_full_name;
-  if ((config_.model == "VLS128") )
-  {
-    packet_rate = 6253.9;     //  3 firing cycles in a data packet. 3 x 53.3 μs = 0.1599 ms is the accumulation delay per packet.
-                            //   1 packet/0.1599 ms = 6253.9 packets/second
-
-    model_full_name = config_.model;
-  }
-  else if ((config_.model == "64E_S2") ||
+  if ((config_.model == "64E_S2") || 
       (config_.model == "64E_S2.1"))    // generates 1333312 points per second
     {                                   // 1 packet holds 384 points
       packet_rate = 3472.17;            // 1333312 / 384
@@ -133,7 +126,7 @@ VelodyneDriver::VelodyneDriver(ros::NodeHandle node,
   }
   else if (cut_angle < (2*M_PI))
   {
-      ROS_INFO_STREAM("Cut at specific angle feature activated. "
+      ROS_INFO_STREAM("Cut at specific angle feature activated. " 
         "Cutting velodyne points always at " << cut_angle << " rad.");
   }
   else
@@ -143,7 +136,7 @@ VelodyneDriver::VelodyneDriver(ros::NodeHandle node,
     cut_angle = -0.01;
   }
 
-  // Convert cut_angle from radian to one-hundredth degree,
+  // Convert cut_angle from radian to one-hundredth degree, 
   // which is used in velodyne packets
   config_.cut_angle = int((cut_angle*360/(2*M_PI))*100);
 
@@ -165,13 +158,11 @@ VelodyneDriver::VelodyneDriver(ros::NodeHandle node,
   diag_min_freq_ = diag_freq;
   ROS_INFO("expected frequency: %.3f (Hz)", diag_freq);
 
-  double diagnostic_frequency_tolerance;
-  private_nh.param("diagnostic_frequency_tolerance", diagnostic_frequency_tolerance, 0.1);
   using namespace diagnostic_updater;
   diag_topic_.reset(new TopicDiagnostic("velodyne_packets", diagnostics_,
                                         FrequencyStatusParam(&diag_min_freq_,
                                                              &diag_max_freq_,
-                                                             diagnostic_frequency_tolerance, 10),
+                                                             0.1, 10),
                                         TimeStampStatusParam()));
   diag_timer_ = private_nh.createTimer(ros::Duration(0.2), &VelodyneDriver::diagTimerCallback,this);
 
@@ -222,9 +213,8 @@ bool VelodyneDriver::poll(void)
       while(true)
       {
         int rc = input_->getPacket(&tmp_packet, config_.time_offset);
-        if (rc == 1) break;       // got a full packet?
+        if (rc == 0) break;       // got a full packet?
         if (rc < 0) return false; // end of file reached?
-        if (rc == 0) continue;    //timeout?
       }
       scan->packets.push_back(tmp_packet);
 
@@ -258,9 +248,8 @@ bool VelodyneDriver::poll(void)
         {
           // keep reading until full packet received
           int rc = input_->getPacket(&scan->packets[i], config_.time_offset);
-          if (rc == 1) break;       // got a full packet?
+          if (rc == 0) break;       // got a full packet?
           if (rc < 0) return false; // end of file reached?
-          if (rc == 0) continue;    //timeout?
         }
     }
   }

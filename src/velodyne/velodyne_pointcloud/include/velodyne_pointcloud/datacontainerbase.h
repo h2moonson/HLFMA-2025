@@ -32,12 +32,10 @@
 // ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include <tf2_ros/transform_listener.h>
-#include <geometry_msgs/TransformStamped.h>
+#include <tf/transform_listener.h>
 #include <velodyne_msgs/VelodyneScan.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <Eigen/Dense>
-#include <memory>
 #include <string>
 #include <algorithm>
 #include <cstdarg>
@@ -49,8 +47,10 @@ class DataContainerBase
 public:
   DataContainerBase(const double max_range, const double min_range, const std::string& target_frame,
                     const std::string& fixed_frame, const unsigned int init_width, const unsigned int init_height,
-                    const bool is_dense, const unsigned int scans_per_packet, int fields, ...)
+                    const bool is_dense, const unsigned int scans_per_packet,
+                    boost::shared_ptr<tf::TransformListener>& tf_ptr, int fields, ...)
     : config_(max_range, min_range, target_frame, fixed_frame, init_width, init_height, is_dense, scans_per_packet)
+    , tf_ptr(tf_ptr)
   {
     va_list vl;
     cloud.fields.clear();
@@ -68,18 +68,23 @@ public:
     va_end(vl);
     cloud.point_step = offset;
     cloud.row_step = init_width * cloud.point_step;
+    if (config_.transform && !tf_ptr)
+    {
+      tf_ptr = boost::shared_ptr<tf::TransformListener>(new tf::TransformListener);
+    }
   }
 
   struct Config
   {
     double max_range;          ///< maximum range to publish
     double min_range;          ///< minimum range to publish
-    std::string target_frame;  ///< output frame of final point cloud
-    std::string fixed_frame;   ///< world fixed frame for ego motion compenstation
+    std::string target_frame;  ///< target frame to transform a point
+    std::string fixed_frame;   ///< fixed frame used for transform
     unsigned int init_width;
     unsigned int init_height;
     bool is_dense;
     unsigned int scans_per_packet;
+    bool transform;  ///< enable / disable transform points
 
     Config(double max_range, double min_range, std::string target_frame, std::string fixed_frame,
            unsigned int init_width, unsigned int init_height, bool is_dense, unsigned int scans_per_packet)
@@ -87,6 +92,7 @@ public:
       , min_range(min_range)
       , target_frame(target_frame)
       , fixed_frame(fixed_frame)
+      , transform(fixed_frame != target_frame)
       , init_width(init_width)
       , init_height(init_height)
       , is_dense(is_dense)
@@ -102,10 +108,7 @@ public:
 
   virtual void setup(const velodyne_msgs::VelodyneScan::ConstPtr& scan_msg)
   {
-    sensor_frame = scan_msg->header.frame_id;
-    manage_tf_buffer();
-
-    cloud.header.stamp = scan_msg->header.stamp;
+    cloud.header = scan_msg->header;
     cloud.data.resize(scan_msg->packets.size() * config_.scans_per_packet * cloud.point_step);
     cloud.width = config_.init_width;
     cloud.height = config_.init_height;
@@ -125,50 +128,10 @@ public:
     {
       cloud.header.frame_id = config_.target_frame;
     }
-    else if (!config_.fixed_frame.empty())
-    {
-      cloud.header.frame_id = config_.fixed_frame;
-    }
-    else
-    {
-      cloud.header.frame_id = sensor_frame;
-    }
 
     ROS_DEBUG_STREAM("Prepared cloud width" << cloud.height * cloud.width
                                             << " Velodyne points, time: " << cloud.header.stamp);
     return cloud;
-  }
-
-  void manage_tf_buffer()
-  {
-    // check if sensor frame is already known, if not don't prepare tf buffer until setup was called
-    if (sensor_frame.empty())
-    {
-      return;
-    }
-
-    // avoid doing transformation when sensor_frame equals target frame and no ego motion compensation is perfomed
-    if (config_.fixed_frame.empty() && sensor_frame == config_.target_frame)
-    {
-      // when the string is empty the points will not be transformed later on
-      config_.target_frame = "";
-      return;
-    }
-
-    // only use somewhat resource intensive tf listener when transformations are necessary
-    if (!config_.fixed_frame.empty() || !config_.target_frame.empty())
-    {
-      if (!tf_buffer)
-      {
-        tf_buffer = std::make_shared<tf2_ros::Buffer>();
-        tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
-      }
-    }
-    else
-    {
-      tf_listener.reset();
-      tf_buffer.reset();
-    }
   }
 
   void configure(const double max_range, const double min_range, const std::string fixed_frame,
@@ -179,79 +142,53 @@ public:
     config_.fixed_frame = fixed_frame;
     config_.target_frame = target_frame;
 
-    manage_tf_buffer();
+    config_.transform = fixed_frame.compare(target_frame) != 0;
+    if (config_.transform && !tf_ptr)
+    {
+      tf_ptr = boost::shared_ptr<tf::TransformListener>(new tf::TransformListener);
+    }
   }
 
   sensor_msgs::PointCloud2 cloud;
 
-  inline bool calculateTransformMatrix(Eigen::Affine3f& matrix, const std::string& target_frame,
-                                       const std::string& source_frame, const ros::Time& time)
+  inline void vectorTfToEigen(tf::Vector3& tf_vec, Eigen::Vector3f& eigen_vec)
   {
-    if (!tf_buffer)
-    {
-      ROS_ERROR("tf buffer was not initialized yet");
-      return false;
-    }
+    eigen_vec(0) = tf_vec[0];
+    eigen_vec(1) = tf_vec[1];
+    eigen_vec(2) = tf_vec[2];
+  }
 
-    geometry_msgs::TransformStamped msg;
+  inline bool computeTransformation(const ros::Time& time)
+  {
+    tf::StampedTransform transform;
     try
     {
-      msg = tf_buffer->lookupTransform(target_frame, source_frame, time, ros::Duration(0.2));
+      tf_ptr->lookupTransform(config_.target_frame, cloud.header.frame_id, time, transform);
     }
-    catch (tf2::LookupException& e)
+    catch (tf::LookupException& e)
     {
       ROS_ERROR("%s", e.what());
       return false;
     }
-    catch (tf2::ExtrapolationException& e)
+    catch (tf::ExtrapolationException& e)
     {
       ROS_ERROR("%s", e.what());
       return false;
     }
 
-    const geometry_msgs::Quaternion& quaternion = msg.transform.rotation;
-    Eigen::Quaternionf rotation(quaternion.w, quaternion.x, quaternion.y, quaternion.z);
+    tf::Quaternion quaternion = transform.getRotation();
+    Eigen::Quaternionf rotation(quaternion.w(), quaternion.x(), quaternion.y(), quaternion.z());
 
-    const geometry_msgs::Vector3& origin = msg.transform.translation;
-    Eigen::Translation3f translation(origin.x, origin.y, origin.z);
-
-    matrix = translation * rotation;
+    Eigen::Vector3f eigen_origin;
+    vectorTfToEigen(transform.getOrigin(), eigen_origin);
+    Eigen::Translation3f translation(eigen_origin);
+    transformation = translation * rotation;
     return true;
-  }
-
-  inline bool computeTransformToTarget(const ros::Time &scan_time)
-  {
-    if (config_.target_frame.empty())
-    {
-      // no need to calculate transform -> success
-      return true;
-    }
-    std::string& source_frame = config_.fixed_frame.empty() ? sensor_frame : config_.fixed_frame;
-    return calculateTransformMatrix(tf_matrix_to_target, config_.target_frame, source_frame, scan_time);
-  }
-
-  inline bool computeTransformToFixed(const ros::Time &packet_time)
-  {
-    if (config_.fixed_frame.empty())
-    {
-      // no need to calculate transform -> success
-      return true;
-    }
-    std::string &source_frame = sensor_frame;
-    return calculateTransformMatrix(tf_matrix_to_fixed, config_.fixed_frame, source_frame, packet_time);
   }
 
   inline void transformPoint(float& x, float& y, float& z)
   {
-    Eigen::Vector3f p = Eigen::Vector3f(x, y, z);
-    if (!config_.fixed_frame.empty())
-    {
-      p = tf_matrix_to_fixed * p;
-    }
-    if (!config_.target_frame.empty())
-    {
-      p = tf_matrix_to_target * p;
-    }
+    Eigen::Vector3f p = transformation * Eigen::Vector3f(x, y, z);
     x = p.x();
     y = p.y();
     z = p.z();
@@ -264,11 +201,8 @@ public:
 
 protected:
   Config config_;
-  std::shared_ptr<tf2_ros::TransformListener> tf_listener;
-  std::shared_ptr<tf2_ros::Buffer> tf_buffer;
-  Eigen::Affine3f tf_matrix_to_fixed;
-  Eigen::Affine3f tf_matrix_to_target;
-  std::string sensor_frame;
+  boost::shared_ptr<tf::TransformListener> tf_ptr;  ///< transform listener
+  Eigen::Affine3f transformation;
 };
 } /* namespace velodyne_rawdata */
 #endif  // VELODYNE_POINTCLOUD_DATACONTAINERBASE_H
