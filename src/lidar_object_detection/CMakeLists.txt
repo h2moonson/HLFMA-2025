@@ -41,6 +41,7 @@ generate_messages(
 
 generate_dynamic_reconfigure_options(
   cfg/config_without_clustering.cfg
+  cfg/labacon3_detection.cfg
 )
 
 
@@ -64,6 +65,11 @@ include_directories(
 add_executable(od_without_clustering src/od_without_clustering.cpp)
 target_link_libraries(od_without_clustering ${catkin_LIBRARIES})
 add_dependencies(od_without_clustering ${PROJECT_NAME}_gencfg)
+
+
+add_executable(labacon3_detection src/labacon3_detection.cpp)
+target_link_libraries(labacon3_detection ${catkin_LIBRARIES})
+add_dependencies(labacon3_detection ${PROJECT_NAME}_gencfg)
 
 # Specify where the Python scripts are located
 catkin_install_python(PROGRAMS

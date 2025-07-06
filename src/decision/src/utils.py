@@ -9,6 +9,7 @@ import numpy as np
 from math import cos,sin,sqrt,pow,atan2,pi
 import tf
 import copy
+from scipy.interpolate import interp1d
 
 DEG2RAD = 1 / 180 * pi
 RAD2DEG = 1 / DEG2RAD
@@ -47,9 +48,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
         self.forward_point = Point()
         self.current_position = Point()
         self.is_look_forward_point = False
-        # self.vehicle_length = 4.635 # 4.6 # 3.0
-        self.vehicle_length = 1.04 # 4.6 # 3.0
-
+        self.vehicle_length = 1.04
         self.lfd = 2
         self.min_lfd = 1.0
         self.max_lfd = 6.0
@@ -61,68 +60,52 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
     def getEgoStatus(self, msg):
         self.current_vel = msg.velocity.x  #kph
         self.vehicle_yaw = msg.heading * DEG2RAD  # rad
-        self.current_position.x=msg.position.x ## 차량의 현재x 좌표 ##
-        self.current_position.y=msg.position.y ## 차량의 현재y 좌표 ##
-        # self.current_position.x = 0.0 ## 차량의 현재x 좌표 ##
-        # self.current_position.y = 0.0 ## 차량의 현재y 좌표 ##
-        self.current_position.z = 0.0 ## 차량의 현재z 좌표 ##
+        self.current_position.x=msg.position.x
+        self.current_position.y=msg.position.y
+        self.current_position.z = 0.0
 
-    # 타겟 지점 설정하기
-    def steeringAngle(self,_static_lfd = 1.0):  ## purePursuit 알고리즘을 이용한 Steering 계산 ## 
+    def steeringAngle(self,_static_lfd = 1.0):
         vehicle_position = self.current_position
         rotated_point = Point()
         self.is_look_forward_point = False
 
         static_lfd = _static_lfd
-        rotated_x_threshold = 0.0
-        rospy.loginfo(f'len of path: {len(self.path.poses)}')
-        rospy.loginfo(f'path: {self.path}')
-        for i in self.path.poses: # self.path == local_path 
+        
+        for i in self.path.poses:
             path_point = i.pose.position
-            # rospy.loginfo(f'path_point: {path_point}')
-            # rospy.loginfo(f'vehicle_position: {vehicle_position}')
             dx = path_point.x - vehicle_position.x
             dy = path_point.y - vehicle_position.y
             rotated_point.x = cos(self.vehicle_yaw) * dx + sin(self.vehicle_yaw) * dy
             rotated_point.y = sin(self.vehicle_yaw) * dx - cos(self.vehicle_yaw) * dy
 
-            if rotated_point.x > rotated_x_threshold :
+            if rotated_point.x > 0 :
                 dis = sqrt(pow(rotated_point.x, 2) + pow(rotated_point.y, 2))
-
+                
                 if static_lfd > 0:
                     self.lfd = static_lfd
-                
-                if dis >= self.lfd:
-                    # rospy.loginfo(f'dis: {dis} | self.lfd: {self.lfd}')
-                    self.lfd = self.current_vel * 0.9 # 0309 Morai
+                else:
+                    self.lfd = self.current_vel * 0.9
 
                     if self.lfd < self.min_lfd: 
                         self.lfd = self.min_lfd 
-
                     elif self.lfd > self.max_lfd:
                         self.lfd = self.max_lfd
 
+                if dis >= self.lfd:
                     self.forward_point = path_point
                     self.is_look_forward_point = True
                     break
         
         theta = atan2(rotated_point.y, rotated_point.x)
-
-        # if self.is_look_forward_point:
         self.steering = atan2((2 * self.vehicle_length * sin(theta)), self.lfd) * RAD2DEG * -1 #deg
-        return self.steering, self.forward_point.x, self.forward_point.y, self.lfd ## Steering 반환 ##
-        
-        # return 0, 0, 0, 0
+        return self.steering, self.forward_point.x, self.forward_point.y, self.lfd
 
-
-    def findLocalPath(self, ref_path,status_msg): ## global_path와 차량의 status_msg를 이용해 현재 waypoint와 local_path를 생성 ##
-        out_path_control=Path()
+    def findLocalPath(self, ref_path,status_msg):
+        out_path=Path()
         current_x=status_msg.position.x
         current_y=status_msg.position.y
         current_waypoint=0
         min_dis=float('inf')
-
-        waypoint_counts = 80
 
         for i in range(len(ref_path.poses)) :
             dx=current_x - ref_path.poses[i].pose.position.x
@@ -132,17 +115,13 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
                 min_dis=dis
                 current_waypoint=i
 
-        if current_waypoint + waypoint_counts > len(ref_path.poses) :
+        if current_waypoint + 80 > len(ref_path.poses) :
             last_local_waypoint= len(ref_path.poses)
         else :
-            last_local_waypoint=current_waypoint + waypoint_counts
-
+            last_local_waypoint=current_waypoint+80
         
-        out_path_control.header.frame_id='map'
-        for i in range(current_waypoint, last_local_waypoint) :
-            if i < 0:
-                continue
-
+        out_path.header.frame_id='map'
+        for i in range(current_waypoint,last_local_waypoint) :
             tmp_pose=PoseStamped()
             tmp_pose.pose.position.x=ref_path.poses[i].pose.position.x
             tmp_pose.pose.position.y=ref_path.poses[i].pose.position.y
@@ -151,20 +130,17 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
             tmp_pose.pose.orientation.y=0
             tmp_pose.pose.orientation.z=0
             tmp_pose.pose.orientation.w=1
-            out_path_control.poses.append(tmp_pose)
+            out_path.poses.append(tmp_pose)
 
-        return current_waypoint, out_path_control
-
-
+        return current_waypoint, out_path
 
     def estimateCurvature(self):
-        if len(self.path.poses) == 0:
+        if len(self.path.poses) < 3:
             return None
 
         vehicle_position = self.current_position
         try:
             last_path_point = self.path.poses[-12].pose.position
-        
         except:
             last_path_point = self.path.poses[-1].pose.position
 
@@ -178,11 +154,9 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
         self.far_forward_point = last_path_point
 
         corner_theta = abs(atan2(rotated_point.y, rotated_point.x))
-        corner_theta_degree = corner_theta * RAD2DEG
+        return corner_theta * RAD2DEG, self.far_forward_point.x, self.far_forward_point.y
 
-        return corner_theta_degree, self.far_forward_point.x, self.far_forward_point.y
-
-class PidController : ## 속도 제어를 위한 PID 적용 ##
+class PidController:
     def __init__(self):
         self.p_gain = 0.7
         self.i_gain = 0.0        
@@ -193,13 +167,104 @@ class PidController : ## 속도 제어를 위한 PID 적용 ##
 
     def pid(self, target_velocity, current_velocity):
         error = target_velocity - current_velocity
-        
         p_control = self.p_gain * error
         self.i_control += self.i_gain * error * self.controlTime
         d_control = self.d_gain * (error-self.prev_error) / self.controlTime
-
         output = p_control + self.i_control + d_control
         self.prev_error = error
-        if (output == 0):
-            print("pid is zero????")
         return output
+
+# =====================================================================
+# Frenet Frame 관련 신규 추가 함수들
+# =====================================================================
+
+def compute_s_and_yaw(ref_path):
+    """
+    전역 경로의 각 점에 대한 누적 거리(s)와 yaw 값을 계산합니다.
+    """
+    s_list = [0.0]
+    yaw_list = []
+    path_points = [p.pose.position for p in ref_path.poses]
+
+    for i in range(1, len(path_points)):
+        dx = path_points[i].x - path_points[i-1].x
+        dy = path_points[i].y - path_points[i-1].y
+        s_list.append(s_list[-1] + np.hypot(dx, dy))
+        yaw_list.append(np.arctan2(dy, dx))
+    
+    if yaw_list:
+        yaw_list.append(yaw_list[-1])  # 마지막 yaw 값 복사
+    
+    return np.array(s_list), np.array(yaw_list)
+
+def cartesian_to_frenet(x, y, ref_path, s_list):
+    """
+    직교 좌표(x, y)를 Frenet 좌표(s, l)로 변환합니다.
+    """
+    path_poses = ref_path.poses
+    min_dist = float('inf')
+    min_idx = 0
+    for i, pose in enumerate(path_poses):
+        dx = x - pose.pose.position.x
+        dy = y - pose.pose.position.y
+        dist = dx**2 + dy**2
+        if dist < min_dist:
+            min_dist = dist
+            min_idx = i
+
+    ref_pose = path_poses[min_idx].pose
+    ref_x = ref_pose.position.x
+    ref_y = ref_pose.position.y
+
+    # Calculate reference yaw
+    if min_idx < len(path_poses) - 1:
+        next_pose = path_poses[min_idx + 1].pose
+        ref_yaw = np.arctan2(next_pose.position.y - ref_y, next_pose.position.x - ref_x)
+    else: # Reached the end of the path
+        prev_pose = path_poses[min_idx - 1].pose
+        ref_yaw = np.arctan2(ref_y - prev_pose.position.y, ref_x - prev_pose.position.x)
+
+    dx = x - ref_x
+    dy = y - ref_y
+
+    s = s_list[min_idx]
+    l = dx * -np.sin(ref_yaw) + dy * np.cos(ref_yaw)
+    return s, l
+
+def frenet_to_cartesian(s, l, ref_path, s_list, yaw_list):
+    """
+    Frenet 좌표(s, l)를 직교 좌표(x, y, yaw)로 변환합니다.
+    """
+    path_points = [p.pose.position for p in ref_path.poses]
+    # interp1d를 사용하여 s 값에 해당하는 ref_path 상의 점을 보간
+    fx = interp1d(s_list, [p.x for p in path_points], fill_value="extrapolate")
+    fy = interp1d(s_list, [p.y for p in path_points], fill_value="extrapolate")
+    fyaw = interp1d(s_list, yaw_list, fill_value="extrapolate")
+
+    x_ref = fx(s)
+    y_ref = fy(s)
+    yaw_ref = fyaw(s)
+
+    x = x_ref - l * np.sin(yaw_ref)
+    y = y_ref + l * np.cos(yaw_ref)
+    
+    # 경로의 yaw와 l 방향을 고려하여 최종 yaw 계산 (단순화된 접근)
+    final_yaw = yaw_ref 
+    return x, y, final_yaw
+
+def generate_quintic_path(s0, l0, s1, l1):
+    """
+    Quintic Polynomial (5차 다항식) 경로를 생성하는 함수를 반환합니다.
+    시작과 끝 지점의 위치, 속도, 가속도가 0이라고 가정합니다.
+    """
+    A = np.array([
+        [1, s0, s0**2,   s0**3,     s0**4,      s0**5],
+        [0, 1,  2*s0,    3*s0**2,   4*s0**3,    5*s0**4],
+        [0, 0,  2,       6*s0,     12*s0**2,   20*s0**3],
+        [1, s1, s1**2,   s1**3,     s1**4,      s1**5],
+        [0, 1,  2*s1,    3*s1**2,   4*s1**3,    5*s1**4],
+        [0, 0,  2,       6*s1,     12*s1**2,   20*s1**3],
+    ])
+    b = np.array([l0, 0, 0, l1, 0, 0])
+    coeffs = np.linalg.solve(A, b)
+    return lambda s: np.polyval(coeffs[::-1], s)
