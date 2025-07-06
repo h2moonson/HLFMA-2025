@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import rospy
 import math
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, String, Int32
 from sensor_msgs.msg import NavSatFix
 from collections import deque
 
@@ -23,7 +23,7 @@ class ModeDecider:
         self.gps_history  = deque([1] * 100, maxlen=self.window_size)
 
         # ───── ROS 통신 ─────
-        rospy.Subscriber('/lane_valid', Bool, self.lane_cb)
+        rospy.Subscriber('/lane_valid', Int32, self.lane_cb)
         rospy.Subscriber('/ntrip_rops/ublox_gps/fix', NavSatFix, self.gps_cb)
         self.mode_pub = rospy.Publisher('/driving_mode', String, queue_size=1, latch=True)
 

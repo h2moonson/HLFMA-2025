@@ -105,7 +105,6 @@ class PurePursuitNode:
         self.steer_gps,   self.vel_gps   = 0.0, 5.0
         self.steer_lidar, self.vel_lidar = 0.0, 3.0
 
-        self.pure_pursuit = PurePursuit() ## purePursuit import
         pid = PidController()
         ### Read path ###
         self.cw_path = path_reader.read_txt("clockwise.txt") ## 출력할 경로의 이름
@@ -117,14 +116,14 @@ class PurePursuitNode:
             self.getEgoCoord()
             
             if self.is_gps_status == True and self.current_mode != 'wait': 
-                self.ctrl_cmd_msg.longlCmdType = 1
-                self.current_waypoint, local_path = self.pure_pursuit.findLocalPath(self.cw_path, self.status_msg)
+                # self.ctrl_cmd_msg.longlCmdType = 1
+                self.current_waypoint, local_path = self.pp_global.findLocalPath(self.cw_path, self.status_msg)
                 self.pp_global.getPath(local_path) 
                 self.pp_global.getEgoStatus(self.status_msg) # utils에서 계산하도록 속도, 위치 넘겨줌
                 # @TODO getEgoStatus에 임시로 local path테스트만 하기에 0, 0 으로 함수 내부에서 설정해둠 > 추후 수정
                 steer, self.target_x, self.target_y, self.lfd = self.pp_global.steeringAngle(1.5)
                 self.steer_gps = (self.steering + 2.7) * self.steering_offset
-                estimate_curvature = self.pp_global.estimateCurvature()
+                estimate_curvature = self.pp_global.estimateCurvature() #local path에서 곡률 계산해서 속도 동적으로 조절하기 위함
 
                 if not estimate_curvature:
                     continue
