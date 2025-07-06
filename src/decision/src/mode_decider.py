@@ -63,7 +63,7 @@ class ModeDecider:
                 new_mode = 'cam'
 
         if new_mode != self.mode:
-            rospy.loginfo(f"[ModeDecider] {self.mode} → {new_mode}")
+            rospy.loginfo("[ModeDecider] {} → {}".format(self.mode, new_mode))
             self.mode = new_mode
             self.mode_pub.publish(String(data=self.mode))
 

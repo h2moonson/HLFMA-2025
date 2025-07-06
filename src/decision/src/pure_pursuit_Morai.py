@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 import rospy
 import numpy as np
 import tf
@@ -14,11 +15,10 @@ from visualization_msgs.msg import Marker, MarkerArray
 from pyproj import Proj
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
-from utils import PurePursuit, PidController, PathReader
-from utils import compute_s_and_yaw, cartesian_to_frenet, frenet_to_cartesian, generate_quintic_path
+from lidar_object_detection.msg import ObjectInfo
 
-# 사용자 환경에 맞는 장애물 메시지 타입으로 수정해야 합니다
-from visualization_msgs.msg import MarkerArray as ObjectInfo
+from utils_morai import PurePursuit, PidController, PathReader
+from utils_morai import compute_s_and_yaw, cartesian_to_frenet, frenet_to_cartesian, generate_quintic_path
 
 class EgoStatus:
     def __init__(self):
@@ -42,7 +42,7 @@ class PurePursuitNode:
         self.pure_pursuit_target_point_pub = rospy.Publisher('/pure_pursuit_target_point', Marker, queue_size=1)
         self.global_path_pub = rospy.Publisher('/global_path', Path, queue_size=1) 
         
-        self.map_origin = [302473.4671541687, 4123735.5805772855] # K-City Origin
+        self.map_origin = [935521.5088412882, 1915824.9469588215] # [302473.4671541687, 4123735.5805772855] # K-City Origin
 
         self.status_msg = EgoStatus()
         self.current_mode = 'wait'
@@ -77,8 +77,8 @@ class PurePursuitNode:
         pid = PidController()
 
         path_reader = PathReader('decision', self.map_origin)
-        self.cw_path = path_reader.read_txt("clockwise.txt")
-        self.ccw_path = path_reader.read_txt("counter_clockwise.txt")
+        self.cw_path = path_reader.read_txt("kcity_full_path_1019.txt")
+        # self.ccw_path = path_reader.read_txt("counter_clockwise.txt")
 
         self.is_avoiding = False
         self.avoidance_path = Path()
@@ -160,13 +160,13 @@ class PurePursuitNode:
                 local_x = dx * np.cos(ego_yaw_rad) + dy * np.sin(ego_yaw_rad)
                 local_y = -dx * np.sin(ego_yaw_rad) + dy * np.cos(ego_yaw_rad)
                 if (0 < local_x < 1.0) and (abs(local_y) < 0.3):
-                    rospy.logwarn(f"[Obstacle] CAM Mode: Obstacle in ROI detected. Stopping.")
+                    rospy.logwarn("[Obstacle] CAM Mode: Obstacle in ROI detected. Stopping.")
                     self.publish_morai_command(0, 0, 1.0)
                     return
         elif self.current_mode == 'gps':
             is_path_blocked, blocked_idx = self.check_path_collision(msg, self.cw_path)
             if is_path_blocked:
-                rospy.logwarn(f"[Obstacle] GPS Mode: Path blocked at index {blocked_idx}. Generating avoidance path.")
+                rospy.logwarn("[Obstacle] GPS Mode: Path blocked at index {}. Generating avoidance path.".format(blocked_idx))
                 self.generate_avoidance_path(blocked_idx)
 
     def check_path_collision(self, obstacle_msg, ref_path):
@@ -201,7 +201,7 @@ class PurePursuitNode:
                 new_path.poses.append(pose)
             self.avoidance_path, self.is_avoiding = new_path, True
         except Exception as e:
-            rospy.logerr(f"Failed to generate avoidance path: {e}")
+            rospy.logerr("Failed to generate avoidance path: {}".format(e))
             self.is_avoiding = False
 
     def getEgoCoord(self):
@@ -210,7 +210,7 @@ class PurePursuitNode:
             self.status_msg.velocity.x, self.is_gps_status = self.current_velocity, True
         else: self.is_gps_status = False
 
-    def gpsCB(self, msg: NavSatFix):
+    def gpsCB(self, msg):
         if msg.status.status == 0: self.is_gps = False; return
         self.is_gps, self.xy_zone = True, self.proj_UTM(msg.longitude, msg.latitude)
         if hasattr(self, 'prev_xy'):
@@ -219,14 +219,14 @@ class PurePursuitNode:
                 self.status_msg.heading, self.prev_xy = np.degrees(np.arctan2(dy, dx)), self.xy_zone
         else: self.prev_xy = self.xy_zone
 
-    def modeCB(self, msg:String): 
-        self.current_mode = msg.data
+    def modeCB(self, msg):
+        self.current_mode = 'gps' #msg.data
         if self.current_mode != 'gps': self.is_avoiding = False
 
-    def egoStatusCB(self, msg: EgoVehicleStatus): 
+    def egoStatusCB(self, msg): 
         self.current_velocity = max(0, msg.velocity.x * 3.6)
 
-    def calcLaneDetectSteeringCB(self, msg:Int32):
+    def calcLaneDetectSteeringCB(self, msg):
         err_px = msg.data - 320
         steer_rad = self.lane_k1 * err_px + self.lane_k2 * err_px * abs(err_px)
         self.lane_steering = np.rad2deg((steer_rad + 2.7) * self.steering_offset) # degree 단위로 변환
