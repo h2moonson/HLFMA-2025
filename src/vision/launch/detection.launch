@@ -13,7 +13,7 @@
         <param name="use_morai" value="$(arg use_morai)">
     </node>
     
-    <node pkg="vision" type="ipm.py" name="ipm" output="screen">
+    <node pkg="vision" type="sliding_window.py" name="sliding_window" output="screen">
         <!-- 카메라 pitch (deg) -->
         <param name="pitch" value="20"/>
         <!-- 카메라 yaw (deg) -->
