@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <ctime>
 
-struct color{
+struct Color{
     int r;
     int g;
     int b;
@@ -17,7 +17,7 @@ Color getRandomcolor() {
     color.r = rand() % 256;
     color.g = rand() % 256;
     color.b = rand() % 256;
-    return color
+    return color;
 }
 
 // pcl point type
@@ -51,7 +51,7 @@ lidar_object_detection::ObjectInfo objectInfoMsg;
 lidar_object_detection::PointInfo pointInfoMsg; // 이미지에 옮길 bbox 각 꼭짓점 정보
 
 
-void cfgCallback(lidar_object_detection::objectDetectorTunnelStaticConfig &config_tunnel_static, int32_t level) {
+void cfgCallback(lidar_object_detection::labacon3DetectionConfig &config_tunnel_static, int32_t level) {
     xMinROI = config_tunnel_static.xMinROI;
     xMaxROI = config_tunnel_static.xMaxROI;
     yMinROI = config_tunnel_static.yMinROI;
@@ -344,8 +344,8 @@ int main (int argc, char** argv) {
     ros::init (argc, argv, "labacon3_detection");
     ros::NodeHandle nh;
 
-    dynamic_reconfigure::Server<lidar_object_detection::objectDetectorTunnelStaticConfig> server;
-    dynamic_reconfigure::Server<lidar_object_detection::objectDetectorTunnelStaticConfig>::CallbackType f;
+    dynamic_reconfigure::Server<lidar_object_detection::labacon3DetectionConfig> server;
+    dynamic_reconfigure::Server<lidar_object_detection::labacon3DetectionConfig>::CallbackType f;
 
     f = boost::bind(&cfgCallback, _1, _2);
     server.setCallback(f);
