@@ -63,7 +63,7 @@ class PurePursuitNode:
         self.proj_UTM = Proj(proj='utm', zone=52, ellps='WGS84', preserve_units=False)
         
         # Subscriber
-        rospy.Subscriber("/Ego_topic", EgoVehicleStatus, self.egoStatusCB)
+        # rospy.Subscriber("/Ego_topic", EgoVehicleStatus, self.egoStatusCB)
         rospy.Subscriber("/ntrip_rops/ublox_gps/fix", NavSatFix, self.gpsCB)
         rospy.Subscriber("/lane_valid", Int32, self.calcLaneDetectSteeringCB)
         rospy.Subscriber("/driving_mode", String, self.modeCB)
@@ -91,6 +91,8 @@ class PurePursuitNode:
         while not rospy.is_shutdown():
             self.getEgoCoord()
             
+            # current_mode -> 에 들어가는 문자열들 상수화 'wait' -> WAIT = 'wait' 이런식
+            # dist_to_end threshold도 같은 맥락으로 상수화 하기
             if self.is_gps_status and self.current_mode != 'wait':
                 path_to_follow = self.cw_path
                 if self.is_avoiding:
@@ -115,6 +117,7 @@ class PurePursuitNode:
                 self.pp_global.getPath(local_path)
                 self.pp_global.getEgoStatus(self.status_msg)
                 
+                # steerAngle에는 왜 0을 넣었는가
                 steer, self.target_x, self.target_y, self.lfd = self.pp_global.steeringAngle(0)
                 self.steer_gps = (steer + 2.7) * self.steering_offset
                 
@@ -250,7 +253,7 @@ class PurePursuitNode:
         self.current_velocity = max(0, msg.velocity.x * 3.6)
 
     def calcLaneDetectSteeringCB(self, msg:Int32):
-        err_px = msg.data - 320
+        err_px = msg.data // 2 - 320
         steer_rad = self.lane_k1 * err_px + self.lane_k2 * err_px * abs(err_px)
         self.lane_steering = (steer_rad + 2.7) * self.steering_offset
     
