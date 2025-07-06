@@ -5,8 +5,8 @@ import numpy as np
 import tf
 
 from nav_msgs.msg import Path
-from std_msgs.msg import Int64MultiArray, Float64, Int64, Bool
-from sensor_msgs.msg import Imu
+from std_msgs.msg import Int64MultiArray, Float64, Int64, Bool, Int32, String
+from sensor_msgs.msg import NavSatFix
 from geometry_msgs.msg import  Vector3
 from visualization_msgs.msg import Marker, MarkerArray
 from pyproj import Proj, transform
@@ -20,6 +20,7 @@ class EgoStatus:
         self.heading = 0.0
         self.position = Vector3()
         self.velocity = Vector3()
+
 
 class PurePursuitNode:
     def __init__(self):
@@ -41,6 +42,7 @@ class PurePursuitNode:
 
         self.status_msg = EgoStatus()
         self.ctrl_cmd_msg = CtrlCmd()
+        self.current_mode = String('wait')
 
         ### Param - Sensor Connection ###
         self.is_gps_status = False
@@ -61,7 +63,6 @@ class PurePursuitNode:
         ### Param - Longitudinal Controller ###
         self.accel_msg = 0.0
         self.brake_msg = 0.0
-
         self.max_velocity = 5.0
         self.min_velocity = 2.0
     
@@ -74,20 +75,38 @@ class PurePursuitNode:
 
         # Subscriber
         rospy.Subscriber("/Ego_topic", EgoVehicleStatus, self.egoStatusCB) ## PID테스트 위해서 모라이에서 속도 받아오기  
-        rospy.Subscriber("/gps", GPSMessage, self.gpsCB) ## Vehicle Status Subscriber 
+        # rospy.Subscriber("/gps", GPSMessage, self.gpsCB) #gps모라이
+        rospy.Subscriber("/ntrip_rops/ublox_gps/fix", NavSatFix, self.gpsCB) #실제센서
         rospy.Subscriber("/grid_sliding_window_path", Path, self.grid_sliding_window_pathCB)
+        rospy.Subscriber("/lane_valid", Int32, self.calcLaneDetectSteeringCB) # 받은 값에서 2로 나누면 차선의 현재 center x 좌표가 나옴
+        rospy.Subscriber("/driving_mode", String, self.modeCB)
+
         self.pid_control_input = 0.0
         self.steering_offset = 0.03
-
         self.current_velocity = 0
+        
+        ### For Lane Detection Control ### 
+        self.lane_k1 = rospy.get_param('~lane_k1', 2.0e-3) #1차 계수
+        self.lane_k2 = rospy.get_param('~lane_k2', 1.0e-5) #2차 계수
+        self.lane_steering = 0.0
         
         
         ### Class ###
         self.grid_sliding_window_path = Path()
         path_reader = PathReader('decision', self.jeju_cw_origin) ## 경로 파일의 위치, offset 적용
+        
+        
+        # ── PurePursuit 인스턴스 2개 ─────────────────────────
+        self.pp_global = PurePursuit()
+        self.pp_lidar  = PurePursuit()
+
+        # ── steering / target-velocity 저장용 ───────────────
+        self.steer_cam,   self.vel_cam   = 0.0, 4.0
+        self.steer_gps,   self.vel_gps   = 0.0, 5.0
+        self.steer_lidar, self.vel_lidar = 0.0, 3.0
+
         self.pure_pursuit = PurePursuit() ## purePursuit import
         pid = PidController()
-
         ### Read path ###
         self.cw_path = path_reader.read_txt("clockwise.txt") ## 출력할 경로의 이름
         self.ccw_path = path_reader.read_txt("counter_clockwise.txt") ## 출력할 경로의 이름
@@ -97,22 +116,41 @@ class PurePursuitNode:
         while not rospy.is_shutdown():
             self.getEgoCoord()
             
-            if self.is_gps_status == True : 
+            if self.is_gps_status == True and self.current_mode != 'wait': 
                 self.ctrl_cmd_msg.longlCmdType = 1
-                self.current_waypoint = self.pure_pursuit.findCurrentWaypoint(self.cw_path, self.status_msg) # utils에서 계산하도록 속도, 위치 넘겨줌
-                local_path = self.pure_pursuit.findLocalPath(self.cw_path, self.status_msg)
-                self.pure_pursuit.getPath(local_path) 
-                self.pure_pursuit.getEgoStatus(self.status_msg) # utils에서 계산하도록 속도, 위치 넘겨줌
+                self.current_waypoint, local_path = self.pure_pursuit.findLocalPath(self.cw_path, self.status_msg)
+                self.pp_global.getPath(local_path) 
+                self.pp_global.getEgoStatus(self.status_msg) # utils에서 계산하도록 속도, 위치 넘겨줌
                 # @TODO getEgoStatus에 임시로 local path테스트만 하기에 0, 0 으로 함수 내부에서 설정해둠 > 추후 수정
-                self.steering, self.target_x, self.target_y, self.lfd = self.pure_pursuit.steeringAngle(1.5)
-                estimate_curvature = self.pure_pursuit.estimateCurvature()
+                steer, self.target_x, self.target_y, self.lfd = self.pp_global.steeringAngle(1.5)
+                self.steer_gps = (self.steering + 2.7) * self.steering_offset
+                estimate_curvature = self.pp_global.estimateCurvature()
 
                 if not estimate_curvature:
                     continue
 
                 self.corner_theta_degree, self.curvature_target_x, self.curvature_target_y = estimate_curvature
                 self.target_velocity = self.cornerController(self.corner_theta_degree)
-                self.pid_control_input = pid.pid(self.target_velocity, self.current_velocity) ## 속도 제어를 위한 PID 적용 (target Velocity, Status Velocity)
+
+                #항상 세 종류의 Steering 게산
+                self.updateLidarOnlyPP() #1. self.steer_lidar갱신
+                #2. self.steer_cam 은 laneErrorCB가 수시 갱신
+                #3. GPS PurePursuit 계산 -> self.steer_gps에서 갱신 
+
+                if  self.current_mode == 'cam':
+                    self.steering_msg = self.steer_cam
+                    target_vel        = self.vel_cam
+                elif self.current_mode == 'gps':
+                    self.steering_msg = self.steer_gps
+                    target_vel        = self.vel_gps
+                elif self.current_mode == 'lidar_only':
+                    self.steering_msg = self.steer_lidar
+                    target_vel        = self.vel_lidar
+                else:                               # 'wait' 등
+                    self.brake(); rate.sleep(); continue
+
+                            
+                self.pid_control_input = pid.pid(target_vel, self.current_velocity) ## 속도 제어를 위한 PID 적용 (target Velocity, Status Velocity)
                 
                 if self.pid_control_input > 0 :
                     self.accel_msg= self.pid_control_input
@@ -122,7 +160,6 @@ class PurePursuitNode:
                     self.accel_msg = 0
                     self.brake_msg = -self.pid_control_input
 
-                self.steering_msg = (self.steering + 2.7) * self.steering_offset
 
 
                 self.current_waypoint_pub.publish(self.current_waypoint)
@@ -157,10 +194,25 @@ class PurePursuitNode:
             rospy.loginfo("Waiting for GPS")
             self.is_gps_status = False
 
+    def updateLidarOnlyPP(self): 
+        if not self.grid_sliding_window_path.poses:
+            return 
+        self.pp_lidar.getPath(self.grid_sliding_window_path)
+        # LiDAR 경로는 차량 좌표계라 ego status 를 (0,0,heading=0) 로 고정
+        dummy_status = EgoStatus();  dummy_status.velocity.x = self.current_velocity
+        self.pp_lidar.getEgoStatus(dummy_status)
+        steer, tx, ty, _ = self.pp_lidar.steeringAngle(1.2)
+        self.steer_lidar = (steer + 2.7)*self.steering_offset
+
     def grid_sliding_window_pathCB(self, msg): 
         self.grid_sliding_window_path = msg
 
-    def gpsCB(self, msg: GPSMessage):
+    def modeCB(self, msg:String): 
+        # mode : cam / gps/ lidar_only
+        self.current_mode = msg.data
+        
+    def gpsCB(self, msg: NavSatFix):
+        # mode와 상관없이 계속 받고 있어야함
         if msg.status == 0: 
             # GPS 상태 불량
             self.is_gps = False
@@ -198,7 +250,17 @@ class PurePursuitNode:
                             "base_link")
             
             self.is_gps = True
-            
+
+    def calcLaneDetectSteeringCB(self, msg:Int32): 
+        '''
+        ADD HERE
+        #msg 를 2로 나눈 값을 차선의 중앙픽셀 x좌표 라고 생각
+        #카메라 이미지의 전체 W의 절반과 위에서 나온 중앙 x좌표 차이를 error로 계산해서> steering_angle을 2차식 형태로 결정(error가 클수록 많이 조향하도록)
+        '''
+        err_px = msg.data #@TODO 이건 단순 중앙 좌표, 카메라의 width /2값을 뺴줘야 error
+        steer_rad = self.lane_k1*err_px + self.lane_k2*err_px*abs(err_px)
+        self.steer_cam = (steer_rad + 2.7) * self.steering_offset
+    
     def publishCtrlCmd(self, accel_msg, steering_msg, brake_msg):
         self.ctrl_cmd_msg.accel = accel_msg
         self.ctrl_cmd_msg.steering = steering_msg

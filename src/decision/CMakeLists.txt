@@ -30,3 +30,9 @@ include_directories(
 )
 
 # Specify where the Python scripts are located
+catkin_install_python(
+  PROGRAMS
+    src/pure_pursuit.py
+    src/mode_decider.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)

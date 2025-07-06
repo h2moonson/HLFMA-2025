@@ -56,7 +56,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
         self.steering = 0
 
     def getPath(self, msg):
-        self.path = msg  #nav_msgs/Path 
+        self.path = msg  #nav_msgs/Path
     
     def getEgoStatus(self, msg):
         self.current_vel = msg.velocity.x  #kph
@@ -66,23 +66,6 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
         # self.current_position.x = 0.0 ## 차량의 현재x 좌표 ##
         # self.current_position.y = 0.0 ## 차량의 현재y 좌표 ##
         self.current_position.z = 0.0 ## 차량의 현재z 좌표 ##
-
-
-    def findCurrentWaypoint(self, ref_path, status_msg): ## global_path와 차량의 status_msg를 이용해 현재 waypoint 생성 ##
-        current_x = status_msg.position.x
-        current_y = status_msg.position.y
-        current_waypoint = 0
-        min_dis = float('inf')
-
-        for i in range(len(ref_path.poses)) :
-            dx = current_x - ref_path.poses[i].pose.position.x
-            dy = current_y - ref_path.poses[i].pose.position.y
-            dis = sqrt(dx * dx + dy * dy)
-            if dis < min_dis:
-                min_dis = dis
-                current_waypoint = i
-
-        return current_waypoint 
 
     # 타겟 지점 설정하기
     def steeringAngle(self,_static_lfd = 1.0):  ## purePursuit 알고리즘을 이용한 Steering 계산 ## 
@@ -130,7 +113,6 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
         return self.steering, self.forward_point.x, self.forward_point.y, self.lfd ## Steering 반환 ##
         
         # return 0, 0, 0, 0
-        
 
 
     def findLocalPath(self, ref_path,status_msg): ## global_path와 차량의 status_msg를 이용해 현재 waypoint와 local_path를 생성 ##
@@ -149,8 +131,6 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
             if dis < min_dis :
                 min_dis=dis
                 current_waypoint=i
-
-
 
         if current_waypoint + waypoint_counts > len(ref_path.poses) :
             last_local_waypoint= len(ref_path.poses)
@@ -173,7 +153,7 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
             tmp_pose.pose.orientation.w=1
             out_path_control.poses.append(tmp_pose)
 
-        return out_path_control
+        return current_waypoint, out_path_control
 
 
 
