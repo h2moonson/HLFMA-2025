@@ -33,88 +33,95 @@ class GridSlidingWindow:
         return (x_orig, y_orig)
 
     def occupancy_grid_callback(self, msg):
-        self.occ_grid = msg 
-        self.occ_grid_resolution = msg.info.resolution
-        self.occ_grid_height = msg.info.height
-        self.occ_grid_width = msg.info.width
-        self.origin_x = msg.info.origin.position.x
-        self.origin_y = msg.info.origin.position.y
+            self.occ_grid = msg 
+            self.occ_grid_resolution = msg.info.resolution
+            self.occ_grid_height = msg.info.height
+            self.occ_grid_width = msg.info.width
+            self.origin_x = msg.info.origin.position.x
+            self.origin_y = msg.info.origin.position.y
 
-        lane_side = ""
-        lane_points = None
-        right_orig = None
-        left_orig = None
-        forced_point = None
-        interpolated_path = Path()
-        invasion_threshold = self.occ_grid_height // 2 
-        
-        # 회전된 이미지 좌표계에서 lane point 검출
-        self.occ_grid_img, self.left_lane_points, self.right_lane_points, last_left_point, last_right_point = self.process_occupancy_grid(self.occ_grid)
+            lane_side = ""
+            lane_points = None
+            right_orig = None
+            left_orig = None
+            forced_point = None
+            interpolated_path = Path()
+            invasion_threshold = self.occ_grid_height // 2 
+            
+            # 회전된 이미지 좌표계에서 lane point 검출
+            self.occ_grid_img, self.left_lane_points, self.right_lane_points, last_left_point, last_right_point = self.process_occupancy_grid(self.occ_grid)
 
-        # smoothing 제거: 단순히 현재 프레임의 lane point 사용
-        smoothed_left = self.left_lane_points
-        smoothed_right = self.right_lane_points
+            # smoothing 제거: 단순히 현재 프레임의 lane point 사용
+            smoothed_left = self.left_lane_points
+            smoothed_right = self.right_lane_points
 
-        # 두 lane 모두 없으면 그냥 리턴
-        if len(smoothed_left) == 0 and len(smoothed_right) == 0:
-            return
+            # 두 lane 모두 없으면 그냥 리턴
+            if len(smoothed_left) == 0 and len(smoothed_right) == 0:
+                return
 
-        # XOR 조건 : 한쪽 영역만 valid 한 경우
-        if (len(smoothed_left) == 0) != (len(smoothed_right) == 0):
-            # 왼쪽 lane이 없을 때
-            if len(smoothed_left) == 0:
-                # 만약 left_count가 0이면 직선(오른쪽만 존재)으로 가정
-                if last_right_point == None or last_right_point[0] > invasion_threshold:
-                    lane_points = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
-                    print("shift (왼쪽 없음)") 
-                    lane_side = 'right'
+            # XOR 조건 : 한쪽 영역만 valid 한 경우
+            if (len(smoothed_left) == 0) != (len(smoothed_right) == 0):
+                # 왼쪽 lane이 없을 때
+                if len(smoothed_left) == 0:
+                    # 만약 left_count가 0이면 직선(오른쪽만 존재)으로 가정
+                    if last_right_point == None or last_right_point[0] > invasion_threshold:
+                        lane_points = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
+                        print("shift (왼쪽 없음)") 
+                        lane_side = 'right'
+                    else:
+                        # left_count가 0이 아니면, 급격한 좌회전 상황으로 판단
+                        print("급격한 좌회전")
+                        forced_point = (self.occ_grid_height / 5, self.occ_grid_width - 1)
+                        forced_point = self.convert_processed_to_original(forced_point)
+
+                        right_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
+                        right_orig = right_orig[right_orig[:, 0].argsort()]
+
+                        left_orig = np.array([forced_point])
+                        lane_side = 'abnormal'
+
+                # 오른쪽 lane이 없을 때
+                elif len(smoothed_right) == 0:
+                    if last_left_point == None or last_left_point[0] < invasion_threshold:
+                        lane_points = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
+                        print("shift (오른쪽 없음)")
+                        lane_side = 'left'
+                    else:
+                        print("급격한 우회전")
+                        forced_point = (self.occ_grid_height * (4/5), self.occ_grid_width - 1)
+                        forced_point = self.convert_processed_to_original(forced_point)
+
+                        left_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
+                        left_orig = left_orig[left_orig[:, 0].argsort()]
+
+                        right_orig = np.array([forced_point])
+                        lane_side = 'abnormal'
+
+                # straight-line 경우: lane_points가 할당된 상태
+                if lane_side != 'abnormal':
+                    # lane_points가 numpy array임을 보장
+                    if not isinstance(lane_points, np.ndarray):
+                        lane_points = np.array(lane_points)
+                    lane_points = lane_points[lane_points[:, 0].argsort()]
+                    interpolated_path = self.make_shifted_path(lane_points, lane_side)
                 else:
-                    # left_count가 0이 아니면, 급격한 좌회전 상황으로 판단
-                    print("급격한 좌회전")
-                    forced_point = (self.occ_grid_height / 5, self.occ_grid_width - 1)
-                    forced_point = self.convert_processed_to_original(forced_point)
-
-                    right_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
-                    right_orig = right_orig[right_orig[:, 0].argsort()]
-
-                    left_orig = np.array([forced_point])
-                    lane_side = 'abnormal'
-
-            # 오른쪽 lane이 없을 때
-            elif len(smoothed_right) == 0:
-                if last_left_point == None or last_left_point[0] < invasion_threshold:
-                    lane_points = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
-                    print("shift (오른쪽 없음)")
-                    lane_side = 'left'
-                else:
-                    print("급격한 우회전")
-                    forced_point = (self.occ_grid_height * (4/5), self.occ_grid_width - 1)
-                    forced_point = self.convert_processed_to_original(forced_point)
-
-                    left_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
-                    left_orig = left_orig[left_orig[:, 0].argsort()]
-
-                    right_orig = np.array([forced_point])
-                    lane_side = 'abnormal'
-
-            # straight-line 경우: lane_points가 할당된 상태
-            if lane_side != 'abnormal':
-                # lane_points가 numpy array임을 보장
-                if not isinstance(lane_points, np.ndarray):
-                    lane_points = np.array(lane_points)
-                lane_points = lane_points[lane_points[:, 0].argsort()]
-                interpolated_path = self.make_shifted_path(lane_points, lane_side)
+                    interpolated_path = self.make_center_path(left_orig, right_orig)
             else:
+                # 양쪽 lane point가 모두 존재하는 경우 기존 로직 사용
+                left_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
+                right_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
+                left_orig = left_orig[left_orig[:, 0].argsort()]
+                right_orig = right_orig[right_orig[:, 0].argsort()]
                 interpolated_path = self.make_center_path(left_orig, right_orig)
-        else:
-            # 양쪽 lane point가 모두 존재하는 경우 기존 로직 사용
-            left_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_left])
-            right_orig = np.array([self.convert_processed_to_original(pt) for pt in smoothed_right])
-            left_orig = left_orig[left_orig[:, 0].argsort()]
-            right_orig = right_orig[right_orig[:, 0].argsort()]
-            interpolated_path = self.make_center_path(left_orig, right_orig)
 
-        self.local_path_pub.publish(interpolated_path)
+            # [수정 완료] 경로 시작점을 차량 전방 0.3m로 강제하는 로직
+            if interpolated_path.poses: # 생성된 경로가 비어있지 않다면
+                # 경로의 첫 번째 포인트의 좌표를 차량 기준(velodyne) 0.3m 앞으로 설정
+                interpolated_path.poses[0].pose.position.x = 0.3
+                interpolated_path.poses[0].pose.position.y = 0.0
+                interpolated_path.poses[0].pose.position.z = 0.0 # z축은 0으로 설정
+
+            self.local_path_pub.publish(interpolated_path)
 
     def make_shifted_path(self, lane_points, lane_side):
         # 보간 및 접선 계산
@@ -348,7 +355,7 @@ class GridSlidingWindow:
         expanded_img = cv2.resize(combined_vis, (350, 500), interpolation=cv2.INTER_LINEAR)
         # cv2.imshow("Occupancy Map with ROI and Sliding Windows", expanded_img)
         # cv2.waitKey(1)
-
+    
         return processed_img, left_lane_points, right_lane_points, last_left_point, last_right_point
 
 if __name__ == '__main__':

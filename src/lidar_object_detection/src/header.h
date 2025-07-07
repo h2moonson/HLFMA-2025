@@ -62,6 +62,7 @@
 #include <dynamic_reconfigure/server.h>
 
 #include <lidar_object_detection/objectDetectorConfig.h>
+#include <lidar_object_detection/labacon3DetectionConfig.h>
 
 #include "lidar_object_detection/Boundingbox.h"
 #include "lidar_object_detection/ObjectInfo.h"

@@ -11,15 +11,15 @@ import tf
 import copy
 from scipy.interpolate import interp1d
 
-DEG2RAD = 1 / 180 * pi
-RAD2DEG = 1 / DEG2RAD
+DEG2RAD = 1. / 180.* pi
+RAD2DEG = 1. / DEG2RAD
 
 class PathReader :  ## 텍스트 파일에서 경로를 출력 ##
     def __init__(self,pkg_name, path_offset):
         rospack=rospkg.RosPack()
         self.file_path=rospack.get_path(pkg_name)
         self.path_offset = path_offset
-        rospy.loginfo(f"path_offset: {self.path_offset}")
+        rospy.loginfo("path_offset: {}".format(self.path_offset))
 
     def read_txt(self,file_name):
         full_file_name=self.file_path+"/path/"+file_name
@@ -28,10 +28,10 @@ class PathReader :  ## 텍스트 파일에서 경로를 출력 ##
         global_path.header.frame_id='map'
         line=openFile.readlines()
         for i in line :
-            tmp=i.split(",")
+            tmp=i.split(" ")
             read_pose=PoseStamped()
-            read_pose.pose.position.x=float(tmp[3]) - self.path_offset[0]
-            read_pose.pose.position.y=float(tmp[4]) - self.path_offset[1]
+            read_pose.pose.position.x=float(tmp[0]) - self.path_offset[0]
+            read_pose.pose.position.y=float(tmp[1]) - self.path_offset[1]
             read_pose.pose.position.z=0
             read_pose.pose.orientation.x=0
             read_pose.pose.orientation.y=0
@@ -57,13 +57,14 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
     def getPath(self, msg):
         self.path = msg  #nav_msgs/Path
     
-    def getEgoStatus(self, msg):
-        self.current_vel = msg.velocity.x  #kph
-        self.vehicle_yaw = msg.heading * DEG2RAD  # rad
-        self.current_position.x=msg.position.x
-        self.current_position.y=msg.position.y
-        self.current_position.z = 0.0
-
+    def getEgoStatus(self, status_msg):
+        # status_msg는 AutonomousDriver의 self.status 객체입니다.
+        # velocity가 .x를 가진 객체가 아니라 단일 값이므로 바로 사용합니다.
+        self.current_vel = status_msg.velocity      # kph
+        self.vehicle_yaw = status_msg.heading * DEG2RAD  # rad
+        self.current_position.x = status_msg.position.x
+        self.current_position.y = status_msg.position.y
+        self.current_position.z = 0.0 # z는 0으로 가정
     def steeringAngle(self,_static_lfd = 1.0):
         vehicle_position = self.current_position
         rotated_point = Point()

@@ -1,5 +1,6 @@
 .catkin_tools/
 
+dataset/
 devel/
 logs/
 build/
