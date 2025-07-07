@@ -37,5 +37,6 @@ catkin_install_python(
     src/mode_decider_Morai.py
     src/pure_pursuit_Henes.py
     src/pure_pursuit_Morai.py
+    src/path_maker.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
