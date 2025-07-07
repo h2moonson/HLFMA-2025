@@ -13,7 +13,7 @@ from pyproj import CRS, Transformer
 class GPSFixLogger:
     def __init__(self):
         # ── ROS node ───────────────────────────────────────────────────────────
-        rospy.init_node('gps_fix_logger', anonymous=True)
+        rospy.init_node('path_maker', anonymous=True)
 
         # ── WGS‑84 (EPSG:4326) ➜ UTM‑52N (EPSG:32652) transformer ─────────────
         self.transformer = Transformer.from_crs(
@@ -30,7 +30,7 @@ class GPSFixLogger:
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.file_path = os.path.join(decision_path, f'GPS_{ts}.txt')
         self.fp = open(self.file_path, 'w')
-        rospy.loginfo('[gps_fix_logger] Writing to %s', self.file_path)
+        rospy.loginfo('[path_maker] Writing to %s', self.file_path)
 
         # ── internal counter ──────────────────────────────────────────────────
         self.idx = 1
@@ -62,7 +62,7 @@ class GPSFixLogger:
     def _cleanup(self):
         if not self.fp.closed:
             self.fp.close()
-        rospy.loginfo('[gps_fix_logger] Finished. %d fixes logged.', self.idx-1)
+        rospy.loginfo('[path_maker] Finished. %d fixes logged.', self.idx-1)
 
 
 if __name__ == '__main__':

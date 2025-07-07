@@ -18,9 +18,9 @@ class ModeDecider:
         self.lane_valid_ratio   = rospy.get_param('~lane_valid_ratio', 1.0)
 
         # ───── 내부 상태 ─────
-        self.mode = 'cam'
-        self.lane_history = deque([1] * 100, maxlen=self.window_size)
-        self.gps_history  = deque([1] * 100, maxlen=self.window_size)
+        self.mode = 'wait'
+        self.lane_history = deque([0] * self.window_size, maxlen=self.window_size)
+        self.gps_history = deque([0] * self.window_size, maxlen=self.window_size)
 
         # ───── ROS 통신 ─────
         rospy.Subscriber('/lane_valid', Int32, self.lane_cb)
@@ -28,9 +28,12 @@ class ModeDecider:
         self.mode_pub = rospy.Publisher('/driving_mode', String, queue_size=1, latch=True)
 
         rospy.Timer(rospy.Duration(1.0 / self.rate_hz), self.decide_mode)
+        rospy.loginfo("✅ Mode Decider for Morai is running.")
 
     def lane_cb(self, msg):
-        self.lane_history.append(msg.data)
+        digit = msg.data % 10
+        valid = 1 if digit == 1 else 0  # 1: valid, 0: invalid
+        self.lane_history.append(valid)
 
     def gps_cb(self, msg):
         # 공분산 배열에서 X, Y 방향의 분산을 추출
@@ -47,23 +50,26 @@ class ModeDecider:
 
     def decide_mode(self, _):
         lane_ok = self._ratio(self.lane_history) >= self.lane_valid_ratio
-        gps_ok  = self._ratio(self.gps_history)  >= self.gps_valid_ratio
+        gps_ok = self._ratio(self.gps_history) >= self.gps_valid_ratio
 
+        # 맨 처음에는 모드를 즉시 발행
+        if self.mode == 'wait' and self._ratio(self.gps_history) > 0:
+            self.mode = 'gps' # 기본 시작 모드
+            rospy.loginfo("[ModeDecider] Initial Mode Set: {}".format(self.mode))
+            self.mode_pub.publish(String(data=self.mode))
+            return
+
+        new_mode = self.mode
         if lane_ok:
-            #최우선 순위가 cam이기 때문에 lane_ok조건을 빡세게 주거나, /lane_valid 토픽을 주는 조건을 검증 잘해야함
             new_mode = 'cam'
         else:
-            if self.mode == 'cam':
-                new_mode = 'gps' if gps_ok else 'lidar_only'
-            elif self.mode == 'gps':
-                new_mode = 'lidar_only'
-            elif self.mode == 'lidar_only':
-                new_mode = 'gps' if gps_ok else 'lidar_only'
+            if gps_ok:
+                new_mode = 'gps'
             else:
-                new_mode = 'cam'
-
+                new_mode = 'lidar_only'
+        
         if new_mode != self.mode:
-            rospy.loginfo("[ModeDecider] {} → {}".format(self.mode, new_mode))
+            rospy.loginfo("[ModeDecider] Mode Changed: {} -> {}".format(self.mode, new_mode))
             self.mode = new_mode
             self.mode_pub.publish(String(data=self.mode))
 
