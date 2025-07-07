@@ -71,36 +71,53 @@ class SlidingWindow:
 
         m2pix = 300 # meter 단위에서 pixel 단위로 넘어가기 위한 계수, 이걸 키우면 ipm 사이즈가 커짐
 
-        d_long = self.h / np.tan(self.pitch)
-        d_short = self.h / np.tan(self.pitch + self.alpha)
+        # d_long = self.h / np.tan(self.pitch)
+        # d_short = self.h / np.tan(self.pitch + self.alpha)
 
-        k_long = d_long / np.cos(self.alpha)
-        k_short = d_short / np.cos(self.alpha)
+        # k_long = d_long / np.cos(self.alpha)
+        # k_short = d_short / np.cos(self.alpha)
 
-        pA = np.array([np.cos(self.alpha + self.yaw), np.sin(self.alpha + self.yaw)]) * k_long * m2pix
-        pB = np.array([np.cos(self.yaw - self.alpha), np.sin(self.yaw - self.alpha)]) * k_long * m2pix
+        # pA = np.array([np.cos(self.alpha + self.yaw), np.sin(self.alpha + self.yaw)]) * k_long * m2pix
+        # pB = np.array([np.cos(self.yaw - self.alpha), np.sin(self.yaw - self.alpha)]) * k_long * m2pix
 
-        pC = np.array([np.cos(self.alpha + self.yaw), np.sin(self.alpha + self.yaw)]) * k_short * m2pix
-        pD = np.array([np.cos(self.yaw - self.alpha), np.sin(self.yaw - self.alpha)]) * k_short * m2pix
+        # pC = np.array([np.cos(self.alpha + self.yaw), np.sin(self.alpha + self.yaw)]) * k_short * m2pix
+        # pD = np.array([np.cos(self.yaw - self.alpha), np.sin(self.yaw - self.alpha)]) * k_short * m2pix
 
-        long_side = np.linalg.norm(pA - pB)
-        short_side = np.linalg.norm(pC - pD)
+        # long_side = np.linalg.norm(pA - pB)
+        # short_side = np.linalg.norm(pC - pD)
 
-        top_y_pos = (d_long - d_short) * m2pix
+        # top_y_pos = (d_long - d_short) * m2pix
+        # dst = np.array([[0., 0.],
+        #                 [long_side, 0.],
+        #                 [(long_side + short_side) / 2, top_y_pos],
+        #                 [(long_side - short_side) / 2, top_y_pos]], dtype=np.float32)
+        
+        v_fov = 2 * np.arctan(640. / 480. * np.tan(self.alpha))
+        lu, ru, ld, rd = np.array([
+            self.h / np.array([np.tan(self.pitch), np.sin(self.pitch) * np.tan(self.alpha)]),
+            self.h / np.array([np.tan(self.pitch), -np.sin(self.pitch) * np.tan(self.alpha)]),
+            self.h / np.array([np.tan(v_fov + self.pitch), np.cos(self.pitch) * np.tan(self.alpha) * np.tan(v_fov + self.pitch)]),
+            self.h / np.array([np.tan(v_fov + self.pitch), -np.cos(self.pitch) * np.tan(self.alpha) * np.tan(v_fov + self.pitch)])
+        ]) * 300
+        
+        top_y_pos = (lu[0] - ld[0]) / 2
+        upper = lu[1] - ru[1]
+        lower = ld[1] - rd[1]
+
         dst = np.array([[0., 0.],
-                        [long_side, 0.],
-                        [(long_side + short_side) / 2, top_y_pos],
-                        [(long_side - short_side) / 2, top_y_pos]], dtype=np.float32)
+                        [upper, 0.],
+                        [(upper + lower) / 2, top_y_pos],
+                        [(upper - lower) / 2, top_y_pos]], dtype=np.float32)
         
         img_h, img_w = img.shape[:2]
         src = np.array([[0., 0.], [img_w, 0.], [img_w, img_h // 2], [0., img_h // 2]], dtype=np.float32)
         M = cv2.getPerspectiveTransform(src, dst)
 
-        self.ipm = cv2.warpPerspective(img[img_h // 2:, :], M, (int(long_side), int(top_y_pos)))
+        self.ipm = cv2.warpPerspective(img[img_h // 2:, :], M, (int(upper), int(top_y_pos)))
         self.win_height = self.ipm.shape[0] // self.nwindows
         self.threshold = int(self.win_width * self.win_height * 0.8) # 80%
         
-        crop = self.ipm[:, int((long_side - short_side) / 2):int((long_side + short_side) / 2)]
+        crop = self.ipm[:, int((upper - lower) / 2):int((upper + lower) / 2)]
         cv2.imshow('crop', crop)
         # self.ipm_pub.publish(self.cv_brdige.cv2_to_imgmsg(self.ipm, encoding='bgr8'))
 
