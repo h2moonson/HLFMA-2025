@@ -34,8 +34,6 @@ class SlidingWindow:
         self.ipm = None
         self.ipm_pub = rospy.Publisher('/ipm', Image, queue_size=1)
         
-        # @TODO : lane-error가 아닌 그냥 딱 중앙값으로 설정해야 함
-        # format : 0000000...0000000 (lane-error, 31bit) | 0 (valid, invalid, 1bit)
         self.lane_valid = Int32()
         self.lane_valid_pub = rospy.Publisher('/lane_valid', Int32, queue_size=1)
 
