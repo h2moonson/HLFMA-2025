@@ -21,8 +21,7 @@ Color getRandomcolor() {
 }
 
 // pcl point type
-typedef pcl::PointXYZ PointT;
-// cluster point type
+typedef pcl::PointXYZI PointT;
 typedef pcl::PointXYZI clusterPointT;
 
 // ROI parameter
@@ -175,30 +174,25 @@ pcl::PointCloud<PointT>::Ptr voxelGrid(pcl::PointCloud<PointT>::Ptr input) {
 
 void cluster(pcl::PointCloud<PointT>::Ptr input) {
     if (input->empty()) {
+        objectInfoMsg.objectCounts = 0;
+        pointInfoMsg.bboxCounts = 0;
+        pubObjectInfo.publish(objectInfoMsg);
+        pubPointInfo.publish(pointInfoMsg);
+        
         sensor_msgs::PointCloud2 cluster_point;
         pcl::PointCloud<clusterPointT> totalcloud_clustered;
         pcl::toROSMsg(totalcloud_clustered, cluster_point);
         cluster_point.header.frame_id = "velodyne";
         pubCluster.publish(cluster_point);
-
-        objectInfoMsg.objectCounts = 0;
-        // pubObjectInfo.publish(objectInfoMsg);
         return;
     }
 
-
-    //KD-Tree
     pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>);
-    pcl::PointCloud<clusterPointT>::Ptr clusterPtr(new pcl::PointCloud<clusterPointT>);
     tree->setInputCloud(input);
-
-    //Segmentation
     std::vector<pcl::PointIndices> cluster_indices;
-
-    //DBSCAN with Kdtree for accelerating
     DBSCANKdtreeCluster<PointT> dc;
-    dc.setCorePointMinPts(minPoints);   //Set minimum number of neighbor points
-    dc.setClusterTolerance(epsilon); //Set Epsilon 
+    dc.setCorePointMinPts(minPoints);
+    dc.setClusterTolerance(epsilon);
     dc.setMinClusterSize(minClusterSize);
     dc.setMaxClusterSize(maxClusterSize);
     dc.setSearchMethod(tree);
@@ -206,70 +200,57 @@ void cluster(pcl::PointCloud<PointT>::Ptr input) {
     dc.extract(cluster_indices);
 
     pcl::PointCloud<clusterPointT> totalcloud_clustered;
-    int cluster_id = 0;
+    int valid_cluster_count = 0;
 
-    //각 Cluster 접근
-    for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); it++, cluster_id++) {
-        pcl::PointCloud<clusterPointT> eachcloud_clustered;
-        float cluster_counts = cluster_indices.size();
-
-        //각 Cluster내 각 Point 접근
-        for(std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit) {
-
-            clusterPointT tmp;
-            tmp.x = input->points[*pit].x; 
-            tmp.y = input->points[*pit].y;
-            tmp.z = input->points[*pit].z;
-            tmp.intensity = cluster_id % 100; // 상수 : 예상 가능한 cluster 총 개수
-            eachcloud_clustered.push_back(tmp);
-            totalcloud_clustered.push_back(tmp);
+    // 각 클러스터에 접근
+    for (const auto& it : cluster_indices) {
+        if (valid_cluster_count >= 100) {
+            ROS_WARN("Maximum number of objects (100) detected. Some clusters are ignored.");
+            break; 
         }
 
-        //minPoint와 maxPoint 받아오기
+        pcl::PointCloud<clusterPointT> eachcloud_clustered;
+        for (int pit : it.indices) {
+            clusterPointT tmp;
+            // [수정] input.points -> input->points
+            tmp.x = input->points[pit].x;
+            tmp.y = input->points[pit].y;
+            tmp.z = input->points[pit].z;
+            tmp.intensity = valid_cluster_count;
+            eachcloud_clustered.push_back(tmp);
+        }
+
+
         clusterPointT minPoint, maxPoint;
         pcl::getMinMax3D(eachcloud_clustered, minPoint, maxPoint);
+        
+        float lengthX = maxPoint.x - minPoint.x;
+        float lengthY = maxPoint.y - minPoint.y;
+        float lengthZ = maxPoint.z - minPoint.z;
 
-        objectInfoMsg.lengthX[cluster_id] = maxPoint.x - minPoint.x; // 
-        objectInfoMsg.lengthY[cluster_id] = maxPoint.y - minPoint.y; // 
-        objectInfoMsg.lengthZ[cluster_id] = maxPoint.z - minPoint.z; // 
-        objectInfoMsg.centerX[cluster_id] = (minPoint.x + maxPoint.x)/2; //직육면체 중심 x 좌표
-        objectInfoMsg.centerY[cluster_id] = (minPoint.y + maxPoint.y)/2; //직육면체 중심 y 좌표
-        objectInfoMsg.centerZ[cluster_id] = (minPoint.z + maxPoint.z)/2; //직육면체 중심 z 좌표
-
-        if (xMinBoundingBox <= objectInfoMsg.lengthX[cluster_id] && objectInfoMsg.lengthX[cluster_id] <= xMaxBoundingBox &&
-            yMinBoundingBox <= objectInfoMsg.lengthY[cluster_id] && objectInfoMsg.lengthY[cluster_id] <= yMaxBoundingBox &&
-            zMinBoundingBox <= objectInfoMsg.lengthZ[cluster_id] && objectInfoMsg.lengthZ[cluster_id] <= zMaxBoundingBox) {
-            if (objectInfoMsg.centerY[cluster_id] >= 0) {
-                pointInfoMsg.xMini[cluster_id] = maxPoint.x; 
-                pointInfoMsg.yMini[cluster_id] = minPoint.y;
-                pointInfoMsg.zMini[cluster_id] = minPoint.z;
-
-                pointInfoMsg.xMaxi[cluster_id] = minPoint.x;
-                pointInfoMsg.yMaxi[cluster_id] = maxPoint.y;
-                pointInfoMsg.zMaxi[cluster_id] = maxPoint.z;
-            }
-            else if (objectInfoMsg.centerY[cluster_id] < 0) {
-                pointInfoMsg.xMini[cluster_id] = minPoint.x; 
-                pointInfoMsg.yMini[cluster_id] = minPoint.y;
-                pointInfoMsg.zMini[cluster_id] = minPoint.z;
-
-                pointInfoMsg.xMaxi[cluster_id] = maxPoint.x;
-                pointInfoMsg.yMaxi[cluster_id] = maxPoint.y;
-                pointInfoMsg.zMaxi[cluster_id] = maxPoint.z;
-            }
-
+        if (xMinBoundingBox <= lengthX && lengthX <= xMaxBoundingBox &&
+            yMinBoundingBox <= lengthY && lengthY <= yMaxBoundingBox &&
+            zMinBoundingBox <= lengthZ && lengthZ <= zMaxBoundingBox) {
+            
+            totalcloud_clustered += eachcloud_clustered;
+            
+            objectInfoMsg.lengthX[valid_cluster_count] = lengthX;
+            objectInfoMsg.lengthY[valid_cluster_count] = lengthY;
+            objectInfoMsg.lengthZ[valid_cluster_count] = lengthZ;
+            objectInfoMsg.centerX[valid_cluster_count] = (minPoint.x + maxPoint.x) / 2;
+            objectInfoMsg.centerY[valid_cluster_count] = (minPoint.y + maxPoint.y) / 2;
+            objectInfoMsg.centerZ[valid_cluster_count] = (minPoint.z + maxPoint.z) / 2;
+            
+            valid_cluster_count++;
         }
-        else {
-            cluster_id--;
-        }
-
     }
 
-    objectInfoMsg.objectCounts = cluster_id;
+    objectInfoMsg.objectCounts = valid_cluster_count;
     pubObjectInfo.publish(objectInfoMsg);
 
-    pointInfoMsg.bboxCounts = cluster_id;
-    pubPointInfo.publish(pointInfoMsg);
+    // pointInfoMsg 발행 로직은 필요에 따라 추가
+    // pointInfoMsg.bboxCounts = valid_cluster_count;
+    // pubPointInfo.publish(pointInfoMsg);
 
     sensor_msgs::PointCloud2 cluster_point;
     pcl::toROSMsg(totalcloud_clustered, cluster_point);
@@ -342,6 +323,8 @@ void mainCallback(const sensor_msgs::PointCloud2ConstPtr& input) {
 int main (int argc, char** argv) {
     // Initialize ROS
     ros::init (argc, argv, "labacon3_detection");
+    ROS_INFO("<<<<< labacon3_detection node is starting up! >>>>>"); 
+
     ros::NodeHandle nh;
 
     dynamic_reconfigure::Server<lidar_object_detection::labacon3DetectionConfig> server;
