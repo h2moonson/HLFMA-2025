@@ -1,10 +1,9 @@
 <launch>
   <!-- mode_decider_node 실행 -->
   <node pkg="decision"
-        type="mode_decider_node.py"
-        name="mode_decider_node"
-        output="screen"
-        launch-prefix="python3">
+        type="mode_decider.py"
+        name="mode_decider"
+        output="screen">
 
     <!-- 파라미터 설정 -->
     <param name="gps_rms_threshold" value="0.03" />         <!-- 3cm 이하 RMS만 유효 -->

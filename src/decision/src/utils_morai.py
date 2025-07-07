@@ -57,13 +57,14 @@ class PurePursuit: ## purePursuit 알고리즘 적용 ##
     def getPath(self, msg):
         self.path = msg  #nav_msgs/Path
     
-    def getEgoStatus(self, msg):
-        self.current_vel = msg.velocity.x  #kph
-        self.vehicle_yaw = msg.heading * DEG2RAD  # rad
-        self.current_position.x=msg.position.x
-        self.current_position.y=msg.position.y
-        self.current_position.z = 0.0
-
+    def getEgoStatus(self, status_msg):
+        # status_msg는 AutonomousDriver의 self.status 객체입니다.
+        # velocity가 .x를 가진 객체가 아니라 단일 값이므로 바로 사용합니다.
+        self.current_vel = status_msg.velocity      # kph
+        self.vehicle_yaw = status_msg.heading * DEG2RAD  # rad
+        self.current_position.x = status_msg.position.x
+        self.current_position.y = status_msg.position.y
+        self.current_position.z = 0.0 # z는 0으로 가정
     def steeringAngle(self,_static_lfd = 1.0):
         vehicle_position = self.current_position
         rotated_point = Point()
