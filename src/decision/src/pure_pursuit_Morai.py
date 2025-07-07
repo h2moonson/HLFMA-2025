@@ -319,7 +319,7 @@ class AutonomousDriver(object):
         if self.current_mode != 'gps': self.is_avoiding = False
 
     def lane_error_callback(self, msg):
-        PIXEL_ERROR = msg.data - 320
+        PIXEL_ERROR = msg.data // 2 - 320
         steer_rad = self.lane_steering_gain_1 * PIXEL_ERROR + self.lane_steering_gain_2 * PIXEL_ERROR * abs(PIXEL_ERROR)
         self.lane_steering_deg = np.rad2deg(steer_rad)
 
