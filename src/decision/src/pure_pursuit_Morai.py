@@ -53,7 +53,7 @@ class AutonomousDriver(object):
         self.utm52n_to_utmk_transformer = Transformer.from_crs(proj_UTM52N, proj_UTMK, always_xy=True)
         self.map_origin = [935521.5088, 1915824.9469]
         # self.heading_offset_deg = 0.0
-        self.lidar_offset_x = 1.2 # 실제 마운트 위치는 0.8
+        self.lidar_offset_x = 0.8 # 실제 마운트 위치는 0.8
         
         # 주행 경로 읽기 (global_path 생성)
         path_reader = PathReader('decision', self.map_origin)
@@ -68,8 +68,8 @@ class AutonomousDriver(object):
         self.current_waypoint = 0
         self.lidar_path = Path()
         self.lane_steering_deg = 0.0
-        self.lane_steering_gain_1 = 0.2 # 예시 값
-        self.lane_steering_gain_2 = 0.4 # 예시 값
+        self.lane_steering_gain_1 = rospy.get_param('~lane_k1', 2.0e-3)
+        self.lane_steering_gain_2 = rospy.get_param('~lane_k2', 1.0e-5)
         
         # 주행 속도 파라미터
         self.min_velocity_kph = 2.0
@@ -354,7 +354,7 @@ class AutonomousDriver(object):
 
         self.lidar_path = transformed_path
 
-    def publish_morai_command(self, caller, velocity_kph, steering_deg, brake_val):
+    def publish_morai_command(self, velocity_kph, steering_deg, brake_val):
         # rospy.loginfo('caller : {}'.format(caller))
         
         self.ctrl_cmd.velocity = velocity_kph
