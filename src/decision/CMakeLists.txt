@@ -9,27 +9,27 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   morai_msgs
   std_msgs
+  message_generation
+)
+
+add_service_files(
+  FILES
+  InitializePose.srv
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
 )
 
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES decision
-#  CATKIN_DEPENDS roscpp rospy
-#  DEPENDS system_lib
+  CATKIN_DEPENDS rospy std_msgs message_runtime
 )
 
-###########
-## Build ##
-###########
-
-## Specify additional locations of header files
-## Your package locations should be listed before other locations
 include_directories(
-# include
   ${catkin_INCLUDE_DIRS}
 )
 
-# Specify where the Python scripts are located
 catkin_install_python(
   PROGRAMS
     src/pure_pursuit.py
@@ -38,5 +38,7 @@ catkin_install_python(
     src/pure_pursuit_Henes.py
     src/pure_pursuit_Morai.py
     src/path_maker.py
+    src/morai_maker.py
+    src/wgs84_to_utmk.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
