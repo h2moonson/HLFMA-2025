@@ -38,7 +38,7 @@ class AutonomousDriver(object):
         self.global_path_publisher = rospy.Publisher('/global_path', Path, queue_size=1)
         self.local_path_publisher = rospy.Publisher('/local_path_viz', Path, queue_size=1)
 
-        self.local_path_publisher = rospy.Publisher('/chk_path_viz', Path, queue_size=1)
+        self.chk_path_publisher = rospy.Publisher('/chk_path_viz', Path, queue_size=1)
         self.obst_marker_publisher = rospy.Publisher('/obst_marker_viz', MarkerArray, queue_size=1)
 
         # ----------------------------------------------------------------
@@ -51,13 +51,13 @@ class AutonomousDriver(object):
         proj_UTM52N = CRS('EPSG:32652')
         proj_UTMK = CRS('EPSG:5179')
         self.utm52n_to_utmk_transformer = Transformer.from_crs(proj_UTM52N, proj_UTMK, always_xy=True)
-        self.map_origin = [935521.5088, 1915824.9469]
+        self.map_origin = [935718.8406, 1916164.8082]
         # self.heading_offset_deg = 0.0
         self.lidar_offset_x = 0.8 # 실제 마운트 위치는 0.8
         
         # 주행 경로 읽기 (global_path 생성)
         path_reader = PathReader('decision', self.map_origin)
-        self.global_path = path_reader.read_txt("kcity_full_path_1019.txt")
+        self.global_path = path_reader.read_txt("test2.txt")
 
         # 클래스 멤버 변수(상태 변수) 초기화
         self.status = EgoStatus()
@@ -68,12 +68,12 @@ class AutonomousDriver(object):
         self.current_waypoint = 0
         self.lidar_path = Path()
         self.lane_steering_deg = 0.0
-        self.lane_steering_gain_1 = rospy.get_param('~lane_k1', 2.0e-3)
-        self.lane_steering_gain_2 = rospy.get_param('~lane_k2', 1.0e-5)
+        self.lane_steering_gain_1 = rospy.get_param('~lane_k1', 0.0005)
+        self.lane_steering_gain_2 = rospy.get_param('~lane_k2', 0.0001)
         
         # 주행 속도 파라미터
         self.min_velocity_kph = 2.0
-        self.max_velocity_kph = 15.0
+        self.max_velocity_kph = 10.0
         
         # 제어기 및 메시지 객체 생성
         self.ctrl_cmd = CtrlCmd()
@@ -120,7 +120,7 @@ class AutonomousDriver(object):
             # 2. 경로 유효성 검사 (cam 모드는 경로 기반이 아니므로 제외)
             if len(local_path.poses) < 2 and (self.current_mode != 'cam' or self.is_avoiding):
                 self.is_avoiding = False
-                self.publish_morai_command('line 116', 0.0, 0.0, 1.0)
+                self.publish_morai_command( 0.0, 0.0, 1.0)
                 rate.sleep()
                 continue
             
@@ -153,18 +153,18 @@ class AutonomousDriver(object):
             final_steering_degree = 0.0
             if self.current_mode == 'cam':
                 final_steering_degree = self.lane_steering_deg
-                target_velocity_kph = 4.0 - self.on_dynamic_obs * 4.0
+                target_velocity_kph = 6.0 - self.on_dynamic_obs * 6.0
             elif self.current_mode in ['gps', 'lidar_only']:
                 final_steering_degree = path_based_steering_deg
             else: # 'wait' 또는 알 수 없는 모드
-                self.publish_morai_command('line 153', 0.0, 0.0, 1.0)
+                self.publish_morai_command( 0.0, 0.0, 1.0)
                 rate.sleep()
                 continue
             
             # 6. PID 및 최종 명령 발행
             pid_output = self.pid_controller.pid(target_velocity_kph, self.status.velocity)
             brake_cmd = -pid_output if pid_output < 0 else 0.0
-            self.publish_morai_command('line 160', target_velocity_kph, final_steering_degree, brake_cmd)
+            self.publish_morai_command(target_velocity_kph, final_steering_degree, brake_cmd)
             
             # 7. 시각화
             self.visualize_ego_marker()
@@ -218,13 +218,22 @@ class AutonomousDriver(object):
                 self.generate_avoidance_path(blocked_idx)
 
     def check_path_collision(self, obstacle_msg, ref_path):
-        VEHICLE_RADIUS, ROI_DISTANCE = 0.7, 15.0
+        VEHICLE_RADIUS, ROI_DISTANCE = 0.6, 5.0
         ego_x, ego_y, ego_yaw_rad = self.status.position.x, self.status.position.y, np.deg2rad(self.status.heading)
         
         # 현재 차량의 위치(waypoint)를 기준으로 검사 범위를 설정합니다.
         start_idx = self.current_waypoint
-        end_idx = min(start_idx + len(ref_path.poses) - 1, start_idx + int(ROI_DISTANCE / 0.2))
 
+        # ----------------------------------------------------------------
+        # [수정] end_idx 계산 로직 수정
+        # '경로의 전체 길이'와 '현재 위치 + 검사 거리' 중 작은 값을 선택하여
+        # 인덱스가 경로 길이를 벗어나지 않도록 수정합니다.
+        # ----------------------------------------------------------------
+        look_ahead_points = int(ROI_DISTANCE / 0.2) # 약 7미터 앞의 포인트 수
+        end_idx = min(len(ref_path.poses), start_idx + look_ahead_points)
+
+        # --- (이하 코드는 동일합니다) ---
+        
         viz_path = Path()
         viz_path.header.frame_id = 'map'
         viz_path.header.stamp = rospy.Time.now()
@@ -235,18 +244,14 @@ class AutonomousDriver(object):
             pose.pose.position.x = ref_path.poses[i].pose.position.x
             pose.pose.position.y = ref_path.poses[i].pose.position.y
             viz_path.poses.append(pose)
-        self.local_path_publisher.publish(viz_path)
+        self.chk_path_publisher.publish(viz_path) # Publisher 이름 chk_path_publisher로 수정 제안
 
         markers = MarkerArray()
 
-        # [수정] 'gps' 모드의 장애물 처리 로직
-        # .markers 대신 .objectCounts 만큼 반복합니다.
         for obs_idx in range(obstacle_msg.objectCounts):
-            # .centerX, .centerY로 장애물 위치를 가져옵니다.
             obs_local_x = obstacle_msg.centerX[obs_idx] + self.lidar_offset_x
             obs_local_y = obstacle_msg.centerY[obs_idx]
 
-            # 라이다 좌표계 기준의 장애물 위치를 맵 좌표계로 변환합니다.
             delta_x = obs_local_x * np.cos(ego_yaw_rad) - obs_local_y * np.sin(ego_yaw_rad)
             delta_y = obs_local_x * np.sin(ego_yaw_rad) + obs_local_y * np.cos(ego_yaw_rad)
             obs_global_x = ego_x + delta_x
@@ -255,18 +260,16 @@ class AutonomousDriver(object):
             marker = Marker()
             marker.header.frame_id = 'map'
             marker.header.stamp = rospy.Time.now()
+            marker.id = obs_idx # 각 마커에 고유 ID 부여
             marker.pose.position.x = obs_global_x
             marker.pose.position.y = obs_global_y
             marker.pose.position.z = 1.
-
             marker.type = Marker.CUBE
-
             quat = quaternion_from_euler(0, 0, ego_yaw_rad)
             marker.pose.orientation.x = quat[0]
             marker.pose.orientation.y = quat[1]
             marker.pose.orientation.z = quat[2]
             marker.pose.orientation.w = quat[3]
-            
             marker.scale.x = obstacle_msg.lengthX[obs_idx]
             marker.scale.y = obstacle_msg.lengthY[obs_idx]
             marker.scale.z = obstacle_msg.lengthZ[obs_idx]
@@ -274,28 +277,26 @@ class AutonomousDriver(object):
             marker.color.g = 1.0
             marker.color.b = 0.0
             marker.color.a = .5
-
             markers.markers.append(marker)
-            self.obst_marker_publisher.publish(markers)
-
-            # .scale 대신 .lengthX, .lengthY로 장애물 크기를 가져와 반지름을 계산합니다.
+            
             obs_radius = max(obstacle_msg.lengthX[obs_idx], obstacle_msg.lengthY[obs_idx]) / 2.0
 
             for i in range(start_idx, end_idx):
                 path_point = ref_path.poses[i].pose.position
-                
-                # 경로점과 장애물 사이의 거리가 충돌 반경보다 작으면 충돌로 판단합니다.
                 if np.hypot(path_point.x - obs_global_x, path_point.y - obs_global_y) < (VEHICLE_RADIUS + obs_radius):
-                    return True, i # 충돌 발생, 해당 경로 인덱스 반환
+                    self.obst_marker_publisher.publish(markers) # 충돌 시점에만 발행
+                    return True, i 
                     
-        return False, -1 # 충돌 없음
+        self.obst_marker_publisher.publish(markers) # 충돌이 없을 때도 마커 발행
+        return False, -1
+                
 
     def generate_avoidance_path(self, blocked_idx):
         try:
             ref_path = self.global_path
             s_list, yaw_list = compute_s_and_yaw(ref_path)
             s0, l0 = cartesian_to_frenet(self.status.position.x, self.status.position.y, ref_path, s_list)
-            AVOIDANCE_LENGTH, LATERAL_OFFSET = 0.0, 2.0
+            AVOIDANCE_LENGTH, LATERAL_OFFSET = 0.3, 1.65
             target_s = s_list[blocked_idx] + AVOIDANCE_LENGTH
             target_l = LATERAL_OFFSET
             l_path_func = generate_quintic_path(s0, l0, target_s, target_l)
@@ -319,7 +320,24 @@ class AutonomousDriver(object):
         if self.current_mode != 'gps': self.is_avoiding = False
 
     def lane_error_callback(self, msg):
-        PIXEL_ERROR = msg.data // 2 - 320
+        # ----------------------------------------------------------------
+        # [추가] 차선이 인식되지 않았을 때(msg.data == 0), 조향각을 갱신하지 않고 이전 값을 유지합니다.
+        # ----------------------------------------------------------------
+        if msg.data == 0:
+            rospy.logwarn("Lane data is 0. Maintaining previous steering angle.")
+            return
+
+        # --- (이하 기존 계산 로직은 그대로 실행됩니다) ---
+        
+        # lane_valid 토픽 데이터 형식에 맞춰 중앙 x좌표를 복원합니다.
+        lane_center_x = (msg.data - 1) // 2
+
+        rospy.loginfo("얼마?: {}".format(msg.data))
+        
+        # 실제 이미지 중심(300)을 기준으로 오차를 계산합니다.
+        image_center_x = 300 
+        PIXEL_ERROR = image_center_x - lane_center_x
+        
         steer_rad = self.lane_steering_gain_1 * PIXEL_ERROR + self.lane_steering_gain_2 * PIXEL_ERROR * abs(PIXEL_ERROR)
         self.lane_steering_deg = np.rad2deg(steer_rad)
 
@@ -374,7 +392,7 @@ class AutonomousDriver(object):
             self.status.position.x - self.avoidance_path.poses[-1].pose.position.x,
             self.status.position.y - self.avoidance_path.poses[-1].pose.position.y
         )
-        if dist_to_end < 1.5:
+        if dist_to_end < 0.5:
             rospy.loginfo("[Main Loop] Avoidance complete. Returning to global path.")
             return True
         return False

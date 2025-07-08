@@ -13,7 +13,7 @@ class ModeDeciderMorai:
         self.window_size = rospy.get_param('~history_size', 50)
         self.rate_hz = rospy.get_param('~decide_rate', 10.0)
         self.gps_valid_ratio = 0.9
-        self.lane_valid_ratio = 0.6
+        self.lane_valid_ratio = 0.7
 
         self.mode = 'wait'
         self.lane_history = deque([0] * self.window_size, maxlen=self.window_size)
@@ -25,11 +25,13 @@ class ModeDeciderMorai:
 
         rospy.Timer(rospy.Duration(1.0 / self.rate_hz), self.decide_mode)
         rospy.loginfo("✅ Mode Decider for Morai is running.")
-        self.mode_pub.publish(String(data='gps'))
+        # self.mode_pub.publish(String(data='gps'))
 
     def lane_cb(self, msg):
-        is_valid = 1 if msg.data != 320 else 0
-        self.lane_history.append(is_valid)
+
+        valid = 1 if msg.data != 0 else 0
+
+        self.lane_history.append(valid)
 
     def gps_ok_callback(self, msg):
         self.gps_history.append(1)
@@ -48,10 +50,14 @@ class ModeDeciderMorai:
         if self.mode == 'wait' and self._get_ratio(self.gps_history) > 0:
             self.mode = 'gps' # 기본 시작 모드
             rospy.loginfo("[ModeDecider] Initial Mode Set: {}".format(self.mode))
-            # self.mode_pub.publish(String(data=self.mode))
+            self.mode_pub.publish(String(data=self.mode))
             return
 
         new_mode = self.mode
+
+        rospy.loginfo("lane ok: {}".format(lane_ok))
+
+    
         if lane_ok:
             new_mode = 'cam'
         else:
@@ -63,7 +69,7 @@ class ModeDeciderMorai:
         if new_mode != self.mode:
             rospy.loginfo("[ModeDecider] Mode Changed: {} -> {}".format(self.mode, new_mode))
             self.mode = new_mode
-            # self.mode_pub.publish(String(data=self.mode))
+            self.mode_pub.publish(String(data=self.mode))
 
     def spin(self):
         rospy.spin()
